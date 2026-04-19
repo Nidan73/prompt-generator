@@ -26,28 +26,20 @@ const ratelimit = new Ratelimit({
   prefix: "@prompt-dispatcher/clarify",
 });
 
-const SYSTEM_PROMPT = `You create lightweight guided-mode clarification questions for an AI prompt dispatcher.
+const SYSTEM_PROMPT = `You are an expert Prompt Engineer. The user has provided a vague idea. Your job is to generate exactly 3 multiple-choice questions that will help extract the missing context needed to write a world-class AI prompt.
 
-Return one valid JSON object only. Do not include markdown, prose, comments, code fences, or extra keys.
+CRITICAL RULES:
 
-The JSON object must exactly match this shape:
-{
-  "questions": [
-    {
-      "id": "short_snake_case",
-      "question": "A concise multiple-choice question",
-      "options": ["option one", "option two", "option three"]
-    }
-  ]
-}
+Do NOT ask what the user's acronyms or words mean.
 
-Rules:
-- Return exactly 3 questions.
-- Each question must have exactly 3 options.
-- Options should require zero typing from the user.
-- Questions must clarify outcome, audience/context, and constraints or format.
-- Keep every question under 110 characters.
-- Keep every option under 70 characters.`;
+Ask questions that define the Role, Context, Format, or Constraints.
+
+Examples of good questions: 'What tone should the AI use?', 'What is your current skill level?', 'How long should the output be?', 'Who is the target audience for this output?'
+
+Keep questions and options extremely short and punchy.
+
+Output Format: You MUST return a valid JSON array of exactly 3 objects.
+Schema: [ { "question": "...", "options": ["...", "...", "..."] } ]`;
 
 export async function POST(request: NextRequest) {
   const identifier = getClientIdentifier(request);
@@ -174,7 +166,7 @@ function normalizeQuestion(value: unknown): ClarifyingQuestion | null {
     ? value.options.filter((option): option is string => typeof option === "string")
     : [];
 
-  if (!id || !question || options.length !== 3) {
+  if (!question || options.length !== 3) {
     return null;
   }
 
@@ -185,7 +177,7 @@ function normalizeQuestion(value: unknown): ClarifyingQuestion | null {
   }
 
   return {
-    id: id.replace(/[^a-z0-9_]/gi, "_").toLowerCase().slice(0, 40),
+    id: (id || question).replace(/[^a-z0-9_]/gi, "_").toLowerCase().slice(0, 40),
     question,
     options: cleanedOptions,
   };
