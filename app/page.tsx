@@ -70,6 +70,13 @@ const tabs: Array<{
   },
 ];
 
+const roleOptions = [
+  "Senior Engineer",
+  "Product Strategist",
+  "Research Analyst",
+  "Creative Director",
+];
+
 const fadeUp = {
   initial: { opacity: 0, y: 18 },
   animate: { opacity: 1, y: 0 },
@@ -84,6 +91,9 @@ export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [questions, setQuestions] = useState<ClarifyingQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [selectedRole, setSelectedRole] = useState("");
+  const [customRole, setCustomRole] = useState("");
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [result, setResult] = useState<DispatcherResponse | null>(null);
   const [activeTab, setActiveTab] = useState<RecommendationTier>("open_source");
   const [isClarifying, setIsClarifying] = useState(false);
@@ -95,18 +105,35 @@ export default function Home() {
   const trimmedPrompt = prompt.trim();
   const hasPrompt = trimmedPrompt.length > 0;
   const isCoolingDown = cooldownTimer > 0;
-  const selectedCount = Object.keys(answers).length;
   const isGuided = questions.length > 0;
-  const hasCompletedGuidedFlow = isGuided && selectedCount === questions.length;
+  const answeredQuestionCount = questions.filter((question) => answers[question.id]?.trim()).length;
+  const hasSelectedRole = selectedRole.trim().length > 0;
+  const selectedCount = answeredQuestionCount + (isGuided && hasSelectedRole ? 1 : 0);
+  const guidedStepCount = questions.length + (isGuided ? 1 : 0);
+  const hasCompletedGuidedFlow =
+    isGuided && hasSelectedRole && answeredQuestionCount === questions.length;
   const showGenerateButton = !isGuided || hasCompletedGuidedFlow;
 
   const clarifications = useMemo(
-    () =>
-      questions.map((question) => ({
+    () => {
+      const questionClarifications = questions.map((question) => ({
         question: question.question,
         answer: answers[question.id] ?? "No preference selected.",
-      })),
-    [answers, questions],
+      }));
+
+      if (!isGuided || !selectedRole.trim()) {
+        return questionClarifications;
+      }
+
+      return [
+        {
+          question: "What expert role should the AI assume?",
+          answer: selectedRole.trim(),
+        },
+        ...questionClarifications,
+      ];
+    },
+    [answers, isGuided, questions, selectedRole],
   );
 
   useEffect(() => {
@@ -146,6 +173,9 @@ export default function Home() {
 
       setQuestions(payload as ClarifyingQuestion[]);
       setAnswers({});
+      setSelectedRole("");
+      setCustomRole("");
+      setCustomAnswers({});
     } catch {
       setError("Guided Mode could not start. Try direct generation.");
     } finally {
@@ -203,11 +233,47 @@ export default function Home() {
       ...current,
       [questionId]: option,
     }));
+    setCustomAnswers((current) => {
+      const next = { ...current };
+      delete next[questionId];
+      return next;
+    });
+  }
+
+  function chooseRole(role: string) {
+    setSelectedRole(role);
+    setCustomRole("");
+  }
+
+  function updateCustomRole(value: string) {
+    setCustomRole(value);
+    setSelectedRole(value.trim());
+  }
+
+  function updateCustomAnswer(questionId: string, value: string) {
+    setCustomAnswers((current) => ({
+      ...current,
+      [questionId]: value,
+    }));
+    setAnswers((current) => {
+      const next = { ...current };
+
+      if (value.trim()) {
+        next[questionId] = value.trim();
+      } else {
+        delete next[questionId];
+      }
+
+      return next;
+    });
   }
 
   function resetGuidedMode() {
     setQuestions([]);
     setAnswers({});
+    setSelectedRole("");
+    setCustomRole("");
+    setCustomAnswers({});
   }
 
   async function copyText(label: string, text: string) {
@@ -384,7 +450,7 @@ export default function Home() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="rounded-full border border-gray-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300">
-                      {selectedCount}/{questions.length}
+                      {selectedCount}/{guidedStepCount}
                     </span>
                     <button
                       type="button"
@@ -397,19 +463,66 @@ export default function Home() {
                 </div>
 
                 <div className="mt-6 grid gap-4">
+                  <motion.div
+                    variants={fadeUp}
+                    initial="initial"
+                    animate="animate"
+                    transition={{ duration: 0.3 }}
+                    className="rounded-xl border border-gray-200 bg-slate-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/50"
+                  >
+                    <p className="font-medium leading-relaxed text-slate-950 dark:text-white">
+                      What role should the AI take?
+                    </p>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      {roleOptions.map((role) => {
+                        const isSelected = selectedRole === role;
+
+                        return (
+                          <button
+                            type="button"
+                            key={role}
+                            onClick={() => chooseRole(role)}
+                            className={cn(
+                              "min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-medium leading-relaxed transition",
+                              isSelected
+                                ? "border-cyan-400 bg-cyan-50 text-cyan-900 shadow-sm shadow-cyan-500/10 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-100"
+                                : "border-gray-200 bg-white text-slate-700 hover:border-cyan-300 hover:bg-cyan-50/60 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20",
+                            )}
+                          >
+                            <span className="inline-flex items-center gap-2">
+                              {isSelected ? <Check className="h-4 w-4" /> : null}
+                              {role}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      <input
+                        value={customRole}
+                        onChange={(event) => updateCustomRole(event.target.value)}
+                        placeholder="Custom role..."
+                        className={cn(
+                          "min-h-12 rounded-xl border px-3 py-2 text-sm font-medium leading-relaxed outline-none transition",
+                          customRole.trim()
+                            ? "border-cyan-400 bg-cyan-50 text-cyan-900 shadow-sm shadow-cyan-500/10 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-100"
+                            : "border-gray-200 bg-white text-slate-700 placeholder:text-slate-400 hover:border-cyan-300 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-500/10 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-cyan-700",
+                        )}
+                      />
+                    </div>
+                  </motion.div>
+
                   {questions.map((question, questionIndex) => (
                     <motion.div
                       key={question.id}
                       variants={fadeUp}
                       initial="initial"
                       animate="animate"
-                      transition={{ delay: questionIndex * 0.06, duration: 0.3 }}
+                      transition={{ delay: (questionIndex + 1) * 0.06, duration: 0.3 }}
                       className="rounded-xl border border-gray-200 bg-slate-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/50"
                     >
                       <p className="font-medium leading-relaxed text-slate-950 dark:text-white">
                         {question.question}
                       </p>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                         {question.options.map((option) => {
                           const isSelected = answers[question.id] === option;
 
@@ -432,6 +545,17 @@ export default function Home() {
                             </button>
                           );
                         })}
+                        <input
+                          value={customAnswers[question.id] ?? ""}
+                          onChange={(event) => updateCustomAnswer(question.id, event.target.value)}
+                          placeholder="Custom answer..."
+                          className={cn(
+                            "min-h-12 rounded-xl border px-3 py-2 text-sm font-medium leading-relaxed outline-none transition",
+                            customAnswers[question.id]?.trim()
+                              ? "border-cyan-400 bg-cyan-50 text-cyan-900 shadow-sm shadow-cyan-500/10 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-100"
+                              : "border-gray-200 bg-white text-slate-700 placeholder:text-slate-400 hover:border-cyan-300 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-500/10 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-cyan-700",
+                          )}
+                        />
                       </div>
                     </motion.div>
                   ))}
