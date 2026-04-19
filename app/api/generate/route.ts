@@ -199,36 +199,36 @@ function buildSystemPrompt(userPrompt: string, selectedOptions: string, snippets
 Part 1: The Dynamic Master Prompt
 Use the RTCFC framework to expand the user's vague input.
 
-CRITICAL FORMATTING RULES: > - You are WRITING the final prompt for the user to copy/paste.
+CRITICAL FORMATTING RULES:
+
+You are WRITING the final prompt for the user to copy/paste.
 
 Act as the user.
 
-DO NOT output any instructional text.
+DO NOT output any instructional text or meta-commentary.
 
-DO NOT use brackets like [ or ].
-
-DO NOT write meta-commentary like 'Define the persona'.
+Replace the ALL-CAPS text with your generated prompt.
 
 Format exactly like this in Markdown:
 
 Role
-Act as an elite [Insert specific expert role here]. You possess deep knowledge of [Insert relevant subjects].
+Act as an elite SPECIFIC_EXPERT_ROLE. You possess deep knowledge of RELEVANT_SUBJECTS.
 
 Task
-I need you to [Insert the highly detailed, specific objective here].
+I need you to HIGHLY_DETAILED_OBJECTIVE.
 
 Context
-[Insert all relevant background information, user constraints, and specific details here. Write it as if the user is explaining their situation.]
+RELEVANT_BACKGROUND_AND_CONSTRAINTS. Write it as if the user is explaining their situation.
 
 Format
-Provide the output as [Insert exact format, e.g., a markdown table, a React functional component, a bulleted list].
+Provide the output as EXACT_FORMAT_REQUIREMENT.
 
 Constraints
-[Insert strict rule 1]
+STRICT_RULE_1
 
-[Insert strict rule 2]
+STRICT_RULE_2
 
-[Insert strict rule 3]
+STRICT_RULE_3
 
 Part 2: The Dynamic AI Recommendations (CRITICAL)
 You must analyze the provided live search data: [DuckDuckGo Snippets].
