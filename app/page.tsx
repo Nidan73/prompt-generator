@@ -3,7 +3,7 @@
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/theme-provider";
 import clsx from "clsx";
 import { twMerge } from "tailwind-merge";
 import {

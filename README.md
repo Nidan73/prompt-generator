@@ -70,7 +70,7 @@ Only the latest three post titles and short body snippets are sent to Groq to re
 - **Groq Free-Tier Fallbacks**: Retries on `429` across multiple Groq-hosted free-tier models.
 - **Redis Abuse Protection**: Upstash sliding-window rate limiting protects both `/api/clarify` and `/api/generate`.
 - **Premium Frontend**: Framer Motion transitions, glassmorphism cards, animated guided flow, and responsive layout.
-- **Dark Mode**: `next-themes` powers seamless light/dark switching with an animated Sun/Moon toggle.
+- **Dark Mode**: A local React theme provider plus a Next-managed boot script powers seamless light/dark switching with an animated Sun/Moon toggle.
 - **Copy & Open Flow**: Copies the generated prompt and opens the recommended chat platform.
 
 ## Tech Stack
@@ -79,7 +79,7 @@ Only the latest three post titles and short body snippets are sent to Groq to re
 | --- | --- |
 | Framework | Next.js App Router |
 | UI | React, Tailwind CSS, Framer Motion, lucide-react |
-| Theme | next-themes |
+| Theme | Local class-based theme provider |
 | API Runtime | Next.js serverless route handlers |
 | AI | groq-sdk |
 | Search | Native `fetch()` against Reddit JSON |
