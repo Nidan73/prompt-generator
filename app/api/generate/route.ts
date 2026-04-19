@@ -194,24 +194,34 @@ function buildSystemPrompt(userPrompt: string, selectedOptions: string, snippets
     ? snippets.map((snippet, index) => `${index + 1}. ${snippet}`).join("\n")
     : "No useful snippets found. Use internal training data conservatively.";
 
-  return `You are an elite Prompt Engineer. Your objective is to take the user's vague input and transform it into a highly detailed, professional prompt using the RTCFC framework.
+  return `You are an elite Prompt Engineer. You must dynamically generate a master prompt based on the user's input. Do NOT just output a long paragraph.
 
-Framework Requirements:
+You MUST structure the output using the RTCFC framework, formatted with clear Markdown headers. You must INVENT the optimal expert persona and constraints based on their vague input.
 
-Role: Define a specific, expert persona.
+Format your optimized_prompt exactly like this inside the JSON:
 
-Task: Clearly state the exact objective.
+Role
+[Dynamically define the exact expert persona, e.g., 'Act as a Senior React Architect...']
 
-Context: Inject all relevant background information and user constraints.
+Task
+[Define the specific objective]
 
-Format: Specify exactly how the output should look (e.g., Markdown, code blocks, specific structure).
+Context
+[Inject the background and user's guided choices]
 
-Constraints: List strict rules the AI must follow (e.g., 'Do not use filler language', 'Use React functional components').
+Format
+[Specify exactly how the AI should format its response]
 
-User Input: ${userPrompt}
-Selected Options (if any): ${selectedOptions}
+Constraints
+[List strict, numbered rules the AI must not break]
 
-You MUST return this formatted as a single, highly detailed prompt string inside your JSON output.
+CRITICAL RULE FOR RECOMMENDATIONS: Do not rely on old base-model bias. Prioritize the live search data. If the user is asking for Coding/Programming, Claude (e.g., Claude 3.5 Sonnet) is currently the industry standard for the Premium tier. Ensure your recommendations reflect the absolute best 2026 models for the specific task.
+
+User Input:
+${userPrompt}
+
+Selected Options (if any):
+${selectedOptions}
 
 Based on the live search data [DuckDuckGo Snippets], recommend the best AI platforms.
 CRITICAL RULE FOR URLs: You MUST ONLY provide URLs that lead directly to consumer-facing chat interfaces where the user can immediately paste a prompt.
@@ -226,10 +236,11 @@ If an open-source model is recommended (e.g., Llama 3), link to a free interface
 ${snippetBlock}
 
 Return one valid JSON object only. Do not include markdown fences, commentary, or extra keys.
+The optimized_prompt value must be a single string containing the RTCFC Markdown-style headers exactly: Role, Task, Context, Format, Constraints.
 
 The JSON object must exactly match this shape:
 {
-  "optimized_prompt": "A single, detailed RTCFC prompt string",
+  "optimized_prompt": "Role\\n...\\n\\nTask\\n...\\n\\nContext\\n...\\n\\nFormat\\n...\\n\\nConstraints\\n1. ...",
   "recommendations": {
     "open_source": {
       "model_name": "string",
@@ -265,7 +276,7 @@ async function callGroq(
       },
     ],
     temperature: 0.3,
-    max_completion_tokens: 1800,
+    max_completion_tokens: 2400,
     response_format: { type: "json_object" },
   });
 

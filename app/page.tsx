@@ -1,8 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useTheme } from "next-themes";
+import clsx from "clsx";
+import { twMerge } from "tailwind-merge";
 import {
   AlertCircle,
   Check,
@@ -10,10 +13,11 @@ import {
   ExternalLink,
   Loader2,
   LockKeyhole,
-  MessageSquareText,
+  Moon,
   RefreshCw,
   Search,
   Sparkles,
+  Sun,
   Wand2,
 } from "lucide-react";
 
@@ -40,7 +44,7 @@ type ApiError = {
   retryAfter?: number;
 };
 
-const TABS: Array<{
+const tabs: Array<{
   id: RecommendationTier;
   label: string;
   eyebrow: string;
@@ -49,22 +53,32 @@ const TABS: Array<{
   {
     id: "open_source",
     label: "Open Source",
-    eyebrow: "Free hosted model",
+    eyebrow: "Hosted OSS",
     icon: Search,
   },
   {
     id: "freemium",
     label: "Freemium",
-    eyebrow: "Start fast",
+    eyebrow: "Low friction",
     icon: Wand2,
   },
   {
     id: "premium",
     label: "Premium",
-    eyebrow: "Highest leverage",
+    eyebrow: "Best result",
     icon: LockKeyhole,
   },
 ];
+
+const fadeUp = {
+  initial: { opacity: 0, y: 18 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: 10 },
+};
+
+function cn(...inputs: Array<string | false | null | undefined>) {
+  return twMerge(clsx(inputs));
+}
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
@@ -82,6 +96,9 @@ export default function Home() {
   const hasPrompt = trimmedPrompt.length > 0;
   const isCoolingDown = cooldownTimer > 0;
   const selectedCount = Object.keys(answers).length;
+  const isGuided = questions.length > 0;
+  const hasCompletedGuidedFlow = isGuided && selectedCount === questions.length;
+  const showGenerateButton = !isGuided || hasCompletedGuidedFlow;
 
   const clarifications = useMemo(
     () =>
@@ -130,7 +147,7 @@ export default function Home() {
       setQuestions(payload as ClarifyingQuestion[]);
       setAnswers({});
     } catch {
-      setError("Guided mode could not start. Try direct generation.");
+      setError("Guided Mode could not start. Try direct generation.");
     } finally {
       setIsClarifying(false);
     }
@@ -188,6 +205,11 @@ export default function Home() {
     }));
   }
 
+  function resetGuidedMode() {
+    setQuestions([]);
+    setAnswers({});
+  }
+
   async function copyText(label: string, text: string) {
     await navigator.clipboard.writeText(text);
     setCopied(label);
@@ -205,245 +227,381 @@ export default function Home() {
   const activeRecommendation = result?.recommendations[activeTab];
 
   return (
-    <main className="min-h-screen bg-[#f2f6f4] px-4 py-8 text-[#171b1a] sm:px-6">
-      <div className="mx-auto max-w-4xl">
-        <header className="overflow-hidden rounded-lg border border-[#cbd8d2] bg-white shadow-sm">
-          <div className="relative h-44 w-full border-b border-[#cbd8d2]">
-            <Image
-              src="https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80"
-              alt="Focused workspace with a laptop and planning notes"
-              fill
-              priority
-              sizes="(max-width: 896px) 100vw, 896px"
-              className="object-cover"
-            />
-            <div className="absolute inset-0 bg-[#171b1a]/35" />
-            <div className="absolute left-6 top-6 inline-flex h-10 items-center gap-2 rounded-lg border border-white/35 bg-white/90 px-3 text-sm font-bold text-[#171b1a]">
-              <MessageSquareText className="h-4 w-4 text-[#0f8f7b]" />
-              AI Prompt Dispatcher
-            </div>
-            {isCoolingDown ? (
-              <div className="absolute right-6 top-6 inline-flex h-10 items-center gap-2 rounded-lg border border-[#f4b3c2] bg-[#fff3f6] px-3 text-sm font-bold text-[#9a1f3d]">
-                <AlertCircle className="h-4 w-4" />
-                {cooldownTimer}s cooldown
-              </div>
-            ) : null}
-          </div>
+    <main className="min-h-screen overflow-hidden bg-slate-50 text-slate-950 transition-colors dark:bg-gray-950 dark:text-slate-50">
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.055)_1px,transparent_1px)] bg-[size:56px_56px] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)]" />
 
-          <div className="p-6 sm:p-8">
-            <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#0f8f7b]">
-              RTCFC prompt architect
+      <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+        <motion.header
+          variants={fadeUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.45, ease: "easeOut" }}
+          className="flex items-center justify-between"
+        >
+          <div className="inline-flex h-10 items-center gap-2 rounded-full border border-gray-200 bg-white/80 px-4 text-sm font-semibold shadow-sm shadow-slate-200/60 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/20">
+            <Sparkles className="h-4 w-4 text-cyan-500" />
+            AI Prompt Dispatcher
+          </div>
+          <ThemeToggle />
+        </motion.header>
+
+        <section className="flex flex-1 flex-col justify-center py-10">
+          <motion.div
+            variants={fadeUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.05, duration: 0.5, ease: "easeOut" }}
+            className="mx-auto max-w-3xl text-center"
+          >
+            <p className="text-sm font-medium uppercase tracking-[0.28em] text-cyan-600 dark:text-cyan-400">
+              Premium RTCFC prompt engine
             </p>
-            <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight text-[#171b1a] sm:text-5xl">
-              Turn a lazy idea into a prompt that can actually work.
+            <h1 className="mt-5 text-4xl font-semibold tracking-tight text-slate-950 sm:text-6xl dark:text-white">
+              Turn a rough idea into an expert-grade execution prompt.
             </h1>
-            <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#515d59] sm:text-lg">
-              Add the rough version, answer quick clarification buttons when useful, then
-              generate a structured prompt and route it to chat interfaces where you can paste
-              it immediately.
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-600 sm:text-lg dark:text-slate-400">
+              Guided questions sharpen the intent. The dispatcher builds a structured RTCFC
+              prompt and routes it to consumer chat interfaces that can run it immediately.
             </p>
-          </div>
-        </header>
+          </motion.div>
 
-        <section className="mt-6 rounded-lg border border-[#cbd8d2] bg-white p-6 shadow-sm sm:p-8">
-          <label htmlFor="prompt" className="text-sm font-bold uppercase tracking-[0.14em] text-[#515d59]">
-            Rough prompt
-          </label>
-          <textarea
-            id="prompt"
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Example: write code for my SaaS landing page"
-            className="mt-3 min-h-[180px] w-full resize-none rounded-lg border border-[#b9c7c1] bg-[#fbfdfc] p-4 text-base leading-relaxed text-[#171b1a] outline-none transition placeholder:text-[#8a9691] focus:border-[#0f8f7b] focus:ring-2 focus:ring-[#a7eee1]"
-          />
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-[0.85fr_1.15fr]">
-            <button
-              type="button"
-              onClick={requestClarifications}
-              disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-[#9fb1a9] bg-white px-4 text-sm font-bold text-[#26302c] transition hover:border-[#0f8f7b] hover:bg-[#edf9f6] disabled:cursor-not-allowed disabled:border-[#d7dfdc] disabled:text-[#9aa6a1]"
-            >
-              {isClarifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              Guided Mode
-            </button>
-            <button
-              type="button"
-              onClick={generatePrompt}
-              disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#0f8f7b] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#0a725f] disabled:cursor-not-allowed disabled:bg-[#aebbb5]"
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
-            </button>
-          </div>
-
-          {error ? (
-            <div className="mt-5 rounded-lg border border-[#efb3bf] bg-[#fff3f6] p-4 text-sm font-bold leading-relaxed text-[#9a1f3d]">
-              {error}
-            </div>
-          ) : null}
-        </section>
-
-        {questions.length ? (
-          <section className="mt-6 rounded-lg border border-[#cbd8d2] bg-white p-6 shadow-sm sm:p-8">
-            <div className="flex items-center justify-between gap-4">
+          <motion.section
+            variants={fadeUp}
+            initial="initial"
+            animate="animate"
+            transition={{ delay: 0.12, duration: 0.5, ease: "easeOut" }}
+            className="mx-auto mt-10 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white/85 p-6 shadow-2xl shadow-slate-200/70 backdrop-blur-xl sm:p-8 dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/30"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#0f8f7b]">
-                  Guided Mode
-                </p>
-                <h2 className="mt-1 text-2xl font-black tracking-tight text-[#171b1a]">
-                  Clarify with buttons
+                <label
+                  htmlFor="prompt"
+                  className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400"
+                >
+                  Intent
+                </label>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                  Start deliberately vague.
                 </h2>
               </div>
-              <span className="rounded-lg border border-[#cbd8d2] bg-[#f5f9f7] px-3 py-2 text-sm font-bold text-[#515d59]">
-                {selectedCount}/{questions.length}
-              </span>
+              {isCoolingDown ? (
+                <div className="inline-flex h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300">
+                  <AlertCircle className="h-4 w-4" />
+                  {cooldownTimer}s cooldown
+                </div>
+              ) : null}
             </div>
 
-            <div className="mt-5 grid gap-4">
-              {questions.map((question) => (
-                <div key={question.id} className="rounded-lg border border-[#d7e1dd] bg-[#fbfdfc] p-4">
-                  <p className="font-bold leading-relaxed text-[#171b1a]">{question.question}</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    {question.options.map((option) => {
-                      const isSelected = answers[question.id] === option;
+            <textarea
+              id="prompt"
+              value={prompt}
+              onChange={(event) => {
+                setPrompt(event.target.value);
+                setResult(null);
+              }}
+              placeholder="Example: build a subscription dashboard for a solo founder"
+              className="mt-5 min-h-[170px] w-full resize-none rounded-xl border border-gray-200 bg-slate-50/80 p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:bg-white focus:ring-4 focus:ring-cyan-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:text-white dark:placeholder:text-slate-600 dark:focus:border-cyan-500 dark:focus:bg-gray-950"
+            />
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={requestClarifications}
+                disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
+                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-5 text-sm font-semibold text-slate-900 transition hover:border-cyan-300 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-100 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/30"
+              >
+                {isClarifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                Guided Mode
+              </button>
+
+              <AnimatePresence mode="wait">
+                {showGenerateButton ? (
+                  <motion.button
+                    key="generate"
+                    type="button"
+                    onClick={generatePrompt}
+                    disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
+                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="inline-flex h-12 flex-[1.35] items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
+                  </motion.button>
+                ) : null}
+              </AnimatePresence>
+            </div>
+
+            <AnimatePresence>
+              {isGuided && !hasCompletedGuidedFlow ? (
+                <motion.p
+                  variants={fadeUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="mt-4 text-sm leading-relaxed text-slate-500 dark:text-slate-400"
+                >
+                  Answer all guided options to reveal the Generate Prompt action.
+                </motion.p>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {error ? (
+                <motion.div
+                  variants={fadeUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium leading-relaxed text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300"
+                >
+                  {error}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </motion.section>
+
+          <AnimatePresence>
+            {questions.length ? (
+              <motion.section
+                variants={fadeUp}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.32, ease: "easeOut" }}
+                className="mx-auto mt-5 w-full max-w-4xl overflow-hidden rounded-2xl border border-gray-200 bg-white/75 p-6 shadow-xl shadow-slate-200/50 backdrop-blur-xl sm:p-8 dark:border-gray-800 dark:bg-gray-900/60 dark:shadow-black/20"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">
+                      Guided Mode
+                    </p>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                      Tighten the brief.
+                    </h2>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full border border-gray-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300">
+                      {selectedCount}/{questions.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={resetGuidedMode}
+                      className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:hover:bg-gray-900"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4">
+                  {questions.map((question, questionIndex) => (
+                    <motion.div
+                      key={question.id}
+                      variants={fadeUp}
+                      initial="initial"
+                      animate="animate"
+                      transition={{ delay: questionIndex * 0.06, duration: 0.3 }}
+                      className="rounded-xl border border-gray-200 bg-slate-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/50"
+                    >
+                      <p className="font-medium leading-relaxed text-slate-950 dark:text-white">
+                        {question.question}
+                      </p>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                        {question.options.map((option) => {
+                          const isSelected = answers[question.id] === option;
+
+                          return (
+                            <button
+                              type="button"
+                              key={option}
+                              onClick={() => chooseAnswer(question.id, option)}
+                              className={cn(
+                                "min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-medium leading-relaxed transition",
+                                isSelected
+                                  ? "border-cyan-400 bg-cyan-50 text-cyan-900 shadow-sm shadow-cyan-500/10 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-100"
+                                  : "border-gray-200 bg-white text-slate-700 hover:border-cyan-300 hover:bg-cyan-50/60 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20",
+                              )}
+                            >
+                              <span className="inline-flex items-center gap-2">
+                                {isSelected ? <Check className="h-4 w-4" /> : null}
+                                {option}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.section>
+            ) : null}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {(isLoading || result) && (
+              <motion.section
+                variants={fadeUp}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="mx-auto mt-5 grid w-full max-w-4xl gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"
+              >
+                <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-xl shadow-slate-200/50 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/65 dark:shadow-black/20">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">
+                        Output
+                      </p>
+                      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                        Master prompt
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => result && copyText("prompt", result.optimized_prompt)}
+                      disabled={!result}
+                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:hover:bg-gray-900"
+                    >
+                      <Clipboard className="h-4 w-4" />
+                      {copied === "prompt" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+
+                  <div className="mt-5 min-h-[340px] overflow-auto rounded-xl border border-gray-200 bg-slate-50 p-5 dark:border-gray-800 dark:bg-gray-950/80">
+                    {isLoading ? (
+                      <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 text-center text-slate-500 dark:text-slate-400">
+                        <RefreshCw className="h-7 w-7 animate-spin text-cyan-500" />
+                        <p className="font-medium">Generating a structured RTCFC prompt.</p>
+                      </div>
+                    ) : result ? (
+                      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+                        {result.optimized_prompt}
+                      </pre>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-gray-200 bg-white/80 p-5 shadow-xl shadow-slate-200/50 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/65 dark:shadow-black/20">
+                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">
+                    Routing
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                    Chat platforms
+                  </h2>
+
+                  <div className="mt-5 grid gap-2">
+                    {tabs.map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = activeTab === tab.id;
 
                       return (
                         <button
                           type="button"
-                          key={option}
-                          onClick={() => chooseAnswer(question.id, option)}
-                          className={`min-h-12 rounded-lg border px-3 py-2 text-left text-sm font-bold leading-relaxed transition ${
-                            isSelected
-                              ? "border-[#0f8f7b] bg-[#e4f8f3] text-[#075f51]"
-                              : "border-[#cbd8d2] bg-white text-[#3e4945] hover:border-[#0f8f7b]"
-                          }`}
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id)}
+                          disabled={!result}
+                          className={cn(
+                            "rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
+                            isActive
+                              ? "border-cyan-400 bg-cyan-50 text-cyan-950 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-50"
+                              : "border-gray-200 bg-slate-50 text-slate-700 hover:border-cyan-300 dark:border-gray-800 dark:bg-gray-950/70 dark:text-slate-300 dark:hover:border-cyan-700",
+                          )}
                         >
-                          <span className="inline-flex items-center gap-2">
-                            {isSelected ? <Check className="h-4 w-4" /> : null}
-                            {option}
+                          <span className="flex items-center gap-2 text-sm font-semibold">
+                            <Icon className="h-4 w-4" />
+                            {tab.label}
+                          </span>
+                          <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                            {tab.eyebrow}
                           </span>
                         </button>
                       );
                     })}
                   </div>
+
+                  <div className="mt-4 rounded-xl border border-gray-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-950/80">
+                    {activeRecommendation ? (
+                      <div className="flex flex-col gap-4">
+                        <div>
+                          <h3 className="text-lg font-semibold tracking-tight text-slate-950 dark:text-white">
+                            {activeRecommendation.model_name}
+                          </h3>
+                          <p className="mt-2 break-words text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                            {activeRecommendation.platform_url}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyAndOpen(activeRecommendation)}
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+                        >
+                          {copied === activeRecommendation.model_name ? "Copied Prompt" : "Copy & Open"}
+                          <ExternalLink className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                        Recommendations will appear after generation.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <section className="mt-6 rounded-lg border border-[#cbd8d2] bg-white p-6 shadow-sm sm:p-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#0f8f7b]">
-                Dispatcher output
-              </p>
-              <h2 className="mt-1 text-3xl font-black tracking-tight text-[#171b1a]">
-                Master prompt
-              </h2>
-            </div>
-            <button
-              type="button"
-              onClick={() => result && copyText("prompt", result.optimized_prompt)}
-              disabled={!result}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#9fb1a9] bg-white px-4 text-sm font-bold text-[#26302c] transition hover:border-[#0f8f7b] hover:bg-[#edf9f6] disabled:cursor-not-allowed disabled:border-[#d7dfdc] disabled:text-[#9aa6a1]"
-            >
-              <Clipboard className="h-4 w-4" />
-              {copied === "prompt" ? "Copied" : "Copy Prompt"}
-            </button>
-          </div>
-
-          <div className="mt-5 min-h-[300px] overflow-auto rounded-lg border border-[#d7e1dd] bg-[#fbfdfc] p-5">
-            {isLoading ? (
-              <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 text-center text-[#515d59]">
-                <RefreshCw className="h-7 w-7 animate-spin text-[#0f8f7b]" />
-                <p className="font-bold">Building the RTCFC prompt and routing chat platforms.</p>
-              </div>
-            ) : result ? (
-              <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-[#26302c]">
-                {result.optimized_prompt}
-              </pre>
-            ) : (
-              <div className="flex min-h-[260px] flex-col justify-center gap-3 text-[#6b7772]">
-                <p className="text-lg font-black tracking-tight text-[#171b1a]">
-                  Your generated prompt will appear here.
-                </p>
-                <p className="max-w-xl leading-relaxed">
-                  The backend now forces Role, Task, Context, Format, and Constraints, then
-                  recommends direct chat interfaces instead of docs or repositories.
-                </p>
-              </div>
+              </motion.section>
             )}
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-lg border border-[#cbd8d2] bg-white p-6 shadow-sm sm:p-8">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#0f8f7b]">
-              Platform routing
-            </p>
-            <h2 className="mt-1 text-3xl font-black tracking-tight text-[#171b1a]">
-              Direct chat recommendations
-            </h2>
-          </div>
-
-          <div className="mt-5 grid gap-2 sm:grid-cols-3">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-
-              return (
-                <button
-                  type="button"
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  disabled={!result}
-                  className={`min-h-16 rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${
-                    isActive
-                      ? "border-[#0f8f7b] bg-[#e4f8f3] text-[#075f51]"
-                      : "border-[#cbd8d2] bg-[#fbfdfc] text-[#3e4945] hover:border-[#0f8f7b]"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="mt-2 block text-sm font-black">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 min-h-[160px] rounded-lg border border-[#d7e1dd] bg-[#fbfdfc] p-5">
-            {activeRecommendation ? (
-              <div className="flex h-full flex-col justify-between gap-5">
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#b02a49]">
-                    {TABS.find((tab) => tab.id === activeTab)?.eyebrow}
-                  </p>
-                  <h3 className="mt-2 text-2xl font-black tracking-tight text-[#171b1a]">
-                    {activeRecommendation.model_name}
-                  </h3>
-                  <p className="mt-2 break-words text-sm leading-relaxed text-[#515d59]">
-                    {activeRecommendation.platform_url}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => copyAndOpen(activeRecommendation)}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#171b1a] px-4 text-sm font-black text-white transition hover:bg-[#303735]"
-                >
-                  {copied === activeRecommendation.model_name ? "Copied Prompt" : "Copy & Open Chat"}
-                  <ExternalLink className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex min-h-[118px] items-center text-sm font-bold leading-relaxed text-[#6b7772]">
-                Direct chat links will appear after generation.
-              </div>
-            )}
-          </div>
+          </AnimatePresence>
         </section>
       </div>
     </main>
+  );
+}
+
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
+  return (
+    <button
+      type="button"
+      aria-label="Toggle theme"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="relative inline-flex h-10 w-[72px] items-center rounded-full border border-gray-200 bg-white p-1 shadow-sm shadow-slate-200/60 transition dark:border-gray-800 dark:bg-gray-900 dark:shadow-black/20"
+    >
+      <motion.span
+        layout
+        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+        className={cn(
+          "absolute top-1 flex h-8 w-8 items-center justify-center rounded-full shadow-sm",
+          isDark
+            ? "left-[34px] bg-slate-800 text-cyan-200"
+            : "left-1 bg-slate-950 text-amber-300",
+        )}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {isDark ? (
+            <motion.span
+              key="moon"
+              initial={{ opacity: 0, rotate: -35, scale: 0.8 }}
+              animate={{ opacity: 1, rotate: 0, scale: 1 }}
+              exit={{ opacity: 0, rotate: 35, scale: 0.8 }}
+            >
+              <Moon className="h-4 w-4" />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="sun"
+              initial={{ opacity: 0, rotate: 35, scale: 0.8 }}
+              animate={{ opacity: 1, rotate: 0, scale: 1 }}
+              exit={{ opacity: 0, rotate: -35, scale: 0.8 }}
+            >
+              <Sun className="h-4 w-4" />
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.span>
+    </button>
   );
 }
