@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { search, SafeSearchType } from "duck-duck-scrape";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
@@ -23,6 +22,17 @@ type DispatcherResponse = {
 type GenerateRequest = {
   prompt?: unknown;
   clarifications?: unknown;
+};
+
+type RedditSearchResponse = {
+  data?: {
+    children?: Array<{
+      data?: {
+        title?: string;
+        selftext?: string;
+      };
+    }>;
+  };
 };
 
 const groq = new Groq({
@@ -81,8 +91,42 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const snippets = await getSearchSnippets(userPrompt);
-    const llmContent = await createDispatcherCompletion(userPrompt, body.clarifications, snippets);
+    // Fetch the latest 3 posts from r/LocalLLaMA regarding the user's task.
+    let searchContext = "";
+    try {
+      const searchQuery = encodeURIComponent(`best ${userPrompt.slice(0, 50)} model`);
+      const redditRes = await fetch(
+        `https://www.reddit.com/r/LocalLLaMA/search.json?q=${searchQuery}&restrict_sr=on&sort=new&limit=3`,
+        {
+          headers: { "User-Agent": "AIPromptDispatcher/1.0" },
+          next: { revalidate: 3600 },
+        },
+      );
+
+      if (redditRes.ok) {
+        const redditData = (await redditRes.json()) as RedditSearchResponse;
+        const posts = redditData?.data?.children || [];
+
+        searchContext = posts
+          .map((post) => {
+            const title = post.data?.title?.trim() || "Untitled Reddit discussion";
+            const selftext = post.data?.selftext?.trim().slice(0, 200) || "";
+
+            return `${title}: ${selftext}`;
+          })
+          .join(" | ");
+      } else {
+        console.warn("Reddit search failed with status:", redditRes.status);
+      }
+    } catch (error) {
+      console.error("Reddit fetch crashed:", error);
+    }
+
+    const llmContent = await createDispatcherCompletion(
+      userPrompt,
+      body.clarifications,
+      searchContext,
+    );
     const parsed = parseDispatcherResponse(llmContent);
 
     return NextResponse.json(parsed, {
@@ -134,34 +178,13 @@ function serializeClarifications(clarifications: unknown) {
   }
 }
 
-async function getSearchSnippets(userPrompt: string) {
-  const searchQuery = `top open source AND paid AI models for ${userPrompt} April 2026`;
-  const results = await withTimeout(
-    search(searchQuery, {
-      safeSearch: SafeSearchType.STRICT,
-      marketRegion: "US",
-      region: "us-en",
-    }),
-    1000,
-  ).catch(() => null);
-
-  if (!results) {
-    return [];
-  }
-
-  return results.results
-    .slice(0, 3)
-    .map((result) => stripHtml(result.rawDescription || result.description))
-    .filter(Boolean);
-}
-
 async function createDispatcherCompletion(
   userPrompt: string,
   clarifications: unknown,
-  snippets: string[],
+  searchContext: string,
 ) {
   const selectedOptions = serializeClarifications(clarifications);
-  const systemPrompt = buildSystemPrompt(userPrompt, selectedOptions, snippets);
+  const systemPrompt = buildSystemPrompt(userPrompt, selectedOptions, searchContext);
   const userContent = "Return the strict JSON response now.";
 
   try {
@@ -189,10 +212,10 @@ async function createDispatcherCompletion(
   }
 }
 
-function buildSystemPrompt(userPrompt: string, selectedOptions: string, snippets: string[]) {
-  const snippetBlock = snippets.length
-    ? snippets.map((snippet, index) => `${index + 1}. ${snippet}`).join("\n")
-    : "No useful snippets found. Use internal training data conservatively.";
+function buildSystemPrompt(userPrompt: string, selectedOptions: string, searchContext: string) {
+  const liveSearchData =
+    searchContext.trim() ||
+    "No useful Reddit search data found. Use internal training data conservatively.";
 
   return `You are an elite Prompt Engineer and AI Dispatcher. Your job is to generate a master prompt and route the user to the best current AI platforms.
 
@@ -231,7 +254,7 @@ STRICT_RULE_2
 STRICT_RULE_3
 
 Part 2: The Dynamic AI Recommendations (CRITICAL)
-You must analyze the provided live search data: [DuckDuckGo Snippets].
+You must analyze the provided live search data: [Live Search Data].
 Do NOT rely on outdated static biases. Use the live search data as your primary source of truth to determine the absolute best models for this specific task right now.
 
 Categorize the top current models into three tiers:
@@ -252,8 +275,8 @@ Acceptable routing examples: https://chatgpt.com, https://claude.ai, https://cha
 User Input: ${userPrompt}
 Selected Options: ${selectedOptions}
 
-[DuckDuckGo Snippets]
-${snippetBlock}
+[Live Search Data]
+${liveSearchData}
 
 Return ONLY a raw JSON object with the keys: optimized_prompt (string containing the markdown), and recommendations (object containing open_source, freemium, and premium, each with model_name and platform_url).
 
@@ -405,17 +428,4 @@ function isConsumerChatUrl(url: URL) {
   }
 
   return true;
-}
-
-function stripHtml(value: string) {
-  return value.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 500);
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Search timed out.")), timeoutMs);
-    }),
-  ]);
 }

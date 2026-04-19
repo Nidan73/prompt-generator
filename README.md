@@ -9,7 +9,7 @@
 ![Upstash](https://img.shields.io/badge/Upstash-Redis-00E9A3)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-AI Prompt Dispatcher turns vague, low-effort input into structured, execution-ready prompts using the **RTCFC framework**: Role, Task, Context, Format, and Constraints. It also routes each generated prompt to current AI platform recommendations using live DuckDuckGo search snippets instead of hardcoded model bias.
+AI Prompt Dispatcher turns vague, low-effort input into structured, execution-ready prompts using the **RTCFC framework**: Role, Task, Context, Format, and Constraints. It also routes each generated prompt to current AI platform recommendations using live Reddit model discussions instead of hardcoded model bias.
 
 The result is a fully serverless Next.js app with Guided Mode, animated premium UI, live model discovery, Redis-backed abuse protection, and a Groq free-tier fallback router.
 
@@ -50,22 +50,22 @@ Every API route runs through an Upstash Redis sliding-window rate limiter before
 
 When the limit is exceeded, the API returns `429` with `retryAfter` seconds. The frontend reads that value, disables generation, and displays a live cooldown timer.
 
-### Headless Live Scraping
+### Native Reddit JSON Search
 
-The generator uses `duck-duck-scrape` to search live model rankings with a task-aware query:
+The generator uses Reddit's public JSON endpoint to pull current model discussions from `r/LocalLLaMA` with a task-aware query:
 
 ```txt
-top open source AND paid AI models for [user task] April 2026
+best [user task] model
 ```
 
-Only the top three body snippets are sent to Groq to reduce token usage. The scraper is wrapped in a strict one-second timeout, so temporary DuckDuckGo failures do not take down prompt generation. If search fails, the model falls back to conservative internal reasoning.
+Only the latest three post titles and short body snippets are sent to Groq to reduce token usage. The request uses native `fetch()`, a custom user agent, and one-hour Next.js revalidation, so the app avoids an extra scraping dependency while still getting live community context. If Reddit search fails, the model falls back to conservative internal reasoning.
 
 ## Features
 
 - **RTCFC Prompt Engine**: Generates prompts with explicit Role, Task, Context, Format, and Constraints sections.
 - **Guided Mode**: Uses `llama-3.1-8b-instant` to create short multiple-choice questions that improve weak inputs.
 - **Anti-Fragile Parsing**: Accepts `{ questions: [...] }` or raw arrays, trims extra questions/options, and discards malformed items instead of crashing.
-- **Dynamic AI Routing**: Uses live DuckDuckGo snippets as the primary source for model/platform recommendations.
+- **Dynamic AI Routing**: Uses live Reddit model discussions as the primary source for model/platform recommendations.
 - **Consumer Chat URLs Only**: Rejects obvious API docs, GitHub repos, model-weight pages, and base Hugging Face domains.
 - **Groq Free-Tier Fallbacks**: Retries on `429` across multiple Groq-hosted free-tier models.
 - **Redis Abuse Protection**: Upstash sliding-window rate limiting protects both `/api/clarify` and `/api/generate`.
@@ -82,7 +82,7 @@ Only the top three body snippets are sent to Groq to reduce token usage. The scr
 | Theme | next-themes |
 | API Runtime | Next.js serverless route handlers |
 | AI | groq-sdk |
-| Search | duck-duck-scrape |
+| Search | Native `fetch()` against Reddit JSON |
 | Rate Limit | @upstash/redis, @upstash/ratelimit |
 | Utility | clsx, tailwind-merge |
 
@@ -162,8 +162,8 @@ Guided Mode route.
 Dispatcher route.
 
 1. Rate limits by IP with Upstash.
-2. Searches DuckDuckGo for current AI model recommendations.
-3. Compresses search payload to the top three snippets.
+2. Fetches current `r/LocalLLaMA` model discussions through Reddit JSON.
+3. Compresses search payload to the latest three titles and short body snippets.
 4. Builds the dynamic RTCFC system prompt.
 5. Calls Groq with fallback routing:
 
