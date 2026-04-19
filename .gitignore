@@ -21,3 +21,6 @@ pnpm-debug.log*
 # misc
 .DS_Store
 *.pem
+
+# local maintainer context
+PROJECT_CONTEXT.md

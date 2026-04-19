@@ -63,7 +63,7 @@ Only the latest three post titles and short body snippets are sent to Groq to re
 ## Features
 
 - **RTCFC Prompt Engine**: Generates prompts with explicit Role, Task, Context, Format, and Constraints sections.
-- **Guided Mode**: Uses `llama-3.1-8b-instant` to create short multiple-choice questions that improve weak inputs.
+- **Guided Mode**: Uses `llama-3.1-8b-instant` to create short multiple-choice questions, including a dynamic role/persona question tailored to the user's idea.
 - **Anti-Fragile Parsing**: Accepts `{ questions: [...] }` or raw arrays, trims extra questions/options, and discards malformed items instead of crashing.
 - **Dynamic AI Routing**: Uses live Reddit model discussions as the primary source for model/platform recommendations.
 - **Consumer Chat URLs Only**: Rejects obvious API docs, GitHub repos, model-weight pages, and base Hugging Face domains.
@@ -189,9 +189,13 @@ llama-3.3-70b-versatile -> openai/gpt-oss-120b -> qwen/qwen3-32b
 - Secrets stay in `.env.local`, which is ignored by Git.
 - API routes are stateless and serverless.
 - Redis rate limiting runs before Groq calls.
-- Search timeout prevents scraper hangs from breaking generation.
+- Reddit lookup failures are caught and logged so generation can continue with conservative internal routing.
 - URL validation blocks common non-chat destinations.
 - JSON validation prevents malformed LLM responses from silently corrupting UI state.
+
+## Local Project Context
+
+Maintainer-only architecture notes live in `PROJECT_CONTEXT.md`. This file is intentionally listed in `.gitignore` so private implementation context, decision history, and local notes stay on your machine and are not pushed to GitHub.
 
 ## License
 
