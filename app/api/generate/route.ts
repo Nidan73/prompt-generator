@@ -168,11 +168,18 @@ function serializeClarifications(clarifications: unknown) {
 
 async function getSearchSnippets(userPrompt: string) {
   const searchQuery = `top open source AND paid AI models for ${userPrompt} April 2026`;
-  const results = await search(searchQuery, {
-    safeSearch: SafeSearchType.STRICT,
-    marketRegion: "US",
-    region: "us-en",
-  });
+  const results = await withTimeout(
+    search(searchQuery, {
+      safeSearch: SafeSearchType.STRICT,
+      marketRegion: "US",
+      region: "us-en",
+    }),
+    1000,
+  ).catch(() => null);
+
+  if (!results) {
+    return [];
+  }
 
   return results.results
     .slice(0, 3)
@@ -311,4 +318,13 @@ function isValidHttpUrl(value: string) {
 
 function stripHtml(value: string) {
   return value.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 500);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Search timed out.")), timeoutMs);
+    }),
+  ]);
 }
