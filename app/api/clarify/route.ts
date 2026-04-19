@@ -155,20 +155,27 @@ function normalizePrompt(prompt: unknown) {
 function parseQuestions(content: string): ClarifyingQuestion[] {
   const parsed = JSON.parse(content) as unknown;
 
-  // This line now perfectly aligns with our updated `{ "questions": [...] }` schema
-  const questions = isRecord(parsed) ? parsed.questions : parsed;
+  // Handle both `{ questions: [...] }` and `[...]` in case the LLM ignores JSON mode shape.
+  const questions = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed.questions)
+      ? parsed.questions
+      : [];
 
-  if (!Array.isArray(questions) || questions.length !== 3) {
-    throw new Error("Groq returned an invalid clarification schema.");
+  if (!Array.isArray(questions) || questions.length === 0) {
+    throw new Error("Groq returned an empty or invalid array.");
   }
 
-  const normalized = questions.map(normalizeQuestion);
+  const normalized = questions
+    .slice(0, 3)
+    .map(normalizeQuestion)
+    .filter((question): question is ClarifyingQuestion => Boolean(question));
 
-  if (normalized.some((question) => !question)) {
-    throw new Error("Groq returned malformed clarification questions.");
+  if (normalized.length === 0) {
+    throw new Error("Could not parse any valid questions from the response.");
   }
 
-  return normalized as ClarifyingQuestion[];
+  return normalized;
 }
 
 function normalizeQuestion(value: unknown): ClarifyingQuestion | null {
@@ -179,21 +186,18 @@ function normalizeQuestion(value: unknown): ClarifyingQuestion | null {
   const id = typeof value.id === "string" ? value.id.trim() : "";
   const question =
     typeof value.question === "string" ? value.question.trim() : "";
-  const options = Array.isArray(value.options)
-    ? value.options.filter(
-        (option): option is string => typeof option === "string",
-      )
+  let options = Array.isArray(value.options)
+    ? value.options
+        .filter((option): option is string => typeof option === "string")
+        .map((option) => option.trim())
+        .filter(Boolean)
     : [];
 
-  if (!question || options.length !== 3) {
+  if (!question || options.length < 2) {
     return null;
   }
 
-  const cleanedOptions = options.map((option) => option.trim()).filter(Boolean);
-
-  if (cleanedOptions.length !== 3) {
-    return null;
-  }
+  options = options.slice(0, 4);
 
   return {
     id: (id || question)
@@ -201,7 +205,7 @@ function normalizeQuestion(value: unknown): ClarifyingQuestion | null {
       .toLowerCase()
       .slice(0, 40),
     question,
-    options: cleanedOptions,
+    options,
   };
 }
 
