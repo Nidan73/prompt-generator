@@ -29,24 +29,23 @@ const ratelimit = new Ratelimit({
 const SYSTEM_PROMPT = `You are an expert Prompt Engineer. The user has provided a vague idea. Your job is to generate exactly 3 multiple-choice questions that will help extract the missing context needed to write a world-class AI prompt.
 
 CRITICAL RULES:
+1. Do NOT ask what the user's acronyms or words mean.
+2. Ask questions that define the Role, Context, Format, or Constraints.
+3. Examples of good questions: 'What tone should the AI use?', 'What is your current skill level?', 'How long should the output be?', 'Who is the target audience for this output?'
+4. Keep questions and options extremely short and punchy.
 
-Do NOT ask what the user's acronyms or words mean.
-
-Ask questions that define the Role, Context, Format, or Constraints.
-
-Examples of good questions: 'What tone should the AI use?', 'What is your current skill level?', 'How long should the output be?', 'Who is the target audience for this output?'
-
-Keep questions and options extremely short and punchy.
-
-Output Format: You MUST return a valid JSON array of exactly 3 objects.
-Schema: [ { "question": "...", "options": ["...", "...", "..."] } ]`;
+Output Format: You MUST return a valid JSON object containing a single key called "questions". This key must hold an array of exactly 3 objects. Do NOT use markdown formatting.
+Schema: { "questions": [ { "question": "...", "options": ["...", "...", "..."] } ] }`;
 
 export async function POST(request: NextRequest) {
   const identifier = getClientIdentifier(request);
   const limit = await ratelimit.limit(identifier);
 
   if (!limit.success) {
-    const retryAfter = Math.max(1, Math.ceil((limit.reset - Date.now()) / 1000));
+    const retryAfter = Math.max(
+      1,
+      Math.ceil((limit.reset - Date.now()) / 1000),
+    );
 
     return NextResponse.json(
       {
@@ -70,13 +69,19 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as ClarifyRequest;
   } catch {
-    return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 },
+    );
   }
 
   const userPrompt = normalizePrompt(body.prompt);
 
   if (!userPrompt) {
-    return NextResponse.json({ error: "A non-empty prompt is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "A non-empty prompt is required." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -97,11 +102,17 @@ export async function POST(request: NextRequest) {
       response_format: { type: "json_object" },
     });
 
-    const content = completion.choices[0]?.message.content;
+    let content = completion.choices[0]?.message.content;
 
     if (!content) {
       throw new Error("Groq returned an empty clarification response.");
     }
+
+    // Aggressive regex to strip any markdown hallucinations before parsing
+    content = content
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
 
     const questions = parseQuestions(content);
 
@@ -123,7 +134,10 @@ export async function POST(request: NextRequest) {
 }
 
 function getClientIdentifier(request: NextRequest) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const forwardedFor = request.headers
+    .get("x-forwarded-for")
+    ?.split(",")[0]
+    ?.trim();
   const realIp = request.headers.get("x-real-ip");
   const cloudflareIp = request.headers.get("cf-connecting-ip");
 
@@ -140,6 +154,8 @@ function normalizePrompt(prompt: unknown) {
 
 function parseQuestions(content: string): ClarifyingQuestion[] {
   const parsed = JSON.parse(content) as unknown;
+
+  // This line now perfectly aligns with our updated `{ "questions": [...] }` schema
   const questions = isRecord(parsed) ? parsed.questions : parsed;
 
   if (!Array.isArray(questions) || questions.length !== 3) {
@@ -161,9 +177,12 @@ function normalizeQuestion(value: unknown): ClarifyingQuestion | null {
   }
 
   const id = typeof value.id === "string" ? value.id.trim() : "";
-  const question = typeof value.question === "string" ? value.question.trim() : "";
+  const question =
+    typeof value.question === "string" ? value.question.trim() : "";
   const options = Array.isArray(value.options)
-    ? value.options.filter((option): option is string => typeof option === "string")
+    ? value.options.filter(
+        (option): option is string => typeof option === "string",
+      )
     : [];
 
   if (!question || options.length !== 3) {
@@ -177,7 +196,10 @@ function normalizeQuestion(value: unknown): ClarifyingQuestion | null {
   }
 
   return {
-    id: (id || question).replace(/[^a-z0-9_]/gi, "_").toLowerCase().slice(0, 40),
+    id: (id || question)
+      .replace(/[^a-z0-9_]/gi, "_")
+      .toLowerCase()
+      .slice(0, 40),
     question,
     options: cleanedOptions,
   };
