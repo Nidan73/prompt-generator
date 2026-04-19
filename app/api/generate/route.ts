@@ -42,38 +42,6 @@ const MODEL_CHAIN = [
   "qwen/qwen3-32b",
 ] as const;
 
-const SYSTEM_PROMPT = `You are the AI Prompt Dispatcher.
-
-You turn vague user goals into master-level prompts and recommend where the user should execute them.
-
-Return one valid JSON object only. Do not include markdown, prose, comments, code fences, or extra keys.
-
-The JSON object must exactly match this TypeScript shape:
-{
-  "optimized_prompt": "string",
-  "recommendations": {
-    "open_source": {
-      "model_name": "string",
-      "platform_url": "string"
-    },
-    "freemium": {
-      "model_name": "string",
-      "platform_url": "string"
-    },
-    "premium": {
-      "model_name": "string",
-      "platform_url": "string"
-    }
-  }
-}
-
-Rules:
-- Use the live search snippets as current context, but do not cite or expose raw snippets.
-- The optimized_prompt must be detailed, execution-ready, and directly usable in another AI system.
-- Recommend one open source option, one freemium option, and one premium option.
-- Each platform_url must be a real platform, model page, provider page, or product page URL.
-- If live search context is thin, make a conservative recommendation from generally known AI platforms.`;
-
 export async function POST(request: NextRequest) {
   const identifier = getClientIdentifier(request);
   const limit = await ratelimit.limit(identifier);
@@ -192,17 +160,12 @@ async function createDispatcherCompletion(
   clarifications: unknown,
   snippets: string[],
 ) {
-  const userContent = `User task:
-${userPrompt}
-
-Guided mode clarifications:
-${serializeClarifications(clarifications)}
-
-Live search body snippets from the top 3 DuckDuckGo results:
-${snippets.length ? snippets.map((snippet, index) => `${index + 1}. ${snippet}`).join("\n") : "No useful snippets found."}`;
+  const selectedOptions = serializeClarifications(clarifications);
+  const systemPrompt = buildSystemPrompt(userPrompt, selectedOptions, snippets);
+  const userContent = "Return the strict JSON response now.";
 
   try {
-    return await callGroq(MODEL_CHAIN[0], userContent);
+    return await callGroq(MODEL_CHAIN[0], systemPrompt, userContent);
   } catch (error) {
     if (!isRateLimitError(error)) {
       throw error;
@@ -212,7 +175,7 @@ ${snippets.length ? snippets.map((snippet, index) => `${index + 1}. ${snippet}`)
 
     for (const model of MODEL_CHAIN.slice(1)) {
       try {
-        return await callGroq(model, userContent);
+        return await callGroq(model, systemPrompt, userContent);
       } catch (fallbackError) {
         lastError = fallbackError;
 
@@ -226,13 +189,75 @@ ${snippets.length ? snippets.map((snippet, index) => `${index + 1}. ${snippet}`)
   }
 }
 
-async function callGroq(model: (typeof MODEL_CHAIN)[number], userContent: string) {
+function buildSystemPrompt(userPrompt: string, selectedOptions: string, snippets: string[]) {
+  const snippetBlock = snippets.length
+    ? snippets.map((snippet, index) => `${index + 1}. ${snippet}`).join("\n")
+    : "No useful snippets found. Use internal training data conservatively.";
+
+  return `You are an elite Prompt Engineer. Your objective is to take the user's vague input and transform it into a highly detailed, professional prompt using the RTCFC framework.
+
+Framework Requirements:
+
+Role: Define a specific, expert persona.
+
+Task: Clearly state the exact objective.
+
+Context: Inject all relevant background information and user constraints.
+
+Format: Specify exactly how the output should look (e.g., Markdown, code blocks, specific structure).
+
+Constraints: List strict rules the AI must follow (e.g., 'Do not use filler language', 'Use React functional components').
+
+User Input: ${userPrompt}
+Selected Options (if any): ${selectedOptions}
+
+You MUST return this formatted as a single, highly detailed prompt string inside your JSON output.
+
+Based on the live search data [DuckDuckGo Snippets], recommend the best AI platforms.
+CRITICAL RULE FOR URLs: You MUST ONLY provide URLs that lead directly to consumer-facing chat interfaces where the user can immediately paste a prompt.
+
+Do NOT link to API documentation, GitHub repos, or company homepages.
+
+Acceptable examples: https://chatgpt.com, https://claude.ai, https://chatglm.cn, https://chat.lmsys.org, https://huggingface.co/chat, https://groq.com.
+
+If an open-source model is recommended (e.g., Llama 3), link to a free interface that hosts it (like Groq or HuggingChat), NOT the model weights.
+
+[DuckDuckGo Snippets]
+${snippetBlock}
+
+Return one valid JSON object only. Do not include markdown fences, commentary, or extra keys.
+
+The JSON object must exactly match this shape:
+{
+  "optimized_prompt": "A single, detailed RTCFC prompt string",
+  "recommendations": {
+    "open_source": {
+      "model_name": "string",
+      "platform_url": "consumer chat URL"
+    },
+    "freemium": {
+      "model_name": "string",
+      "platform_url": "consumer chat URL"
+    },
+    "premium": {
+      "model_name": "string",
+      "platform_url": "consumer chat URL"
+    }
+  }
+}`;
+}
+
+async function callGroq(
+  model: (typeof MODEL_CHAIN)[number],
+  systemPrompt: string,
+  userContent: string,
+) {
   const completion = await groq.chat.completions.create({
     model,
     messages: [
       {
         role: "system",
-        content: SYSTEM_PROMPT,
+        content: systemPrompt,
       },
       {
         role: "user",
@@ -310,10 +335,39 @@ function isValidHttpUrl(value: string) {
   try {
     const url = new URL(value);
 
-    return url.protocol === "https:" || url.protocol === "http:";
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return false;
+    }
+
+    return isConsumerChatUrl(url);
   } catch {
     return false;
   }
+}
+
+function isConsumerChatUrl(url: URL) {
+  const hostname = url.hostname.replace(/^www\./, "");
+  const path = url.pathname.toLowerCase();
+  const href = url.href.toLowerCase();
+
+  if (
+    hostname === "github.com" ||
+    hostname.endsWith(".github.com") ||
+    href.includes("/docs") ||
+    href.includes("/documentation") ||
+    href.includes("/api") ||
+    href.includes("/reference") ||
+    href.includes("/models/") ||
+    href.includes("/papers/")
+  ) {
+    return false;
+  }
+
+  if (hostname === "huggingface.co") {
+    return path === "/chat" || path.startsWith("/chat/");
+  }
+
+  return true;
 }
 
 function stripHtml(value: string) {
