@@ -255,19 +255,19 @@ export default function Home() {
   const activeRecommendation = result?.recommendations[activeTab];
 
   return (
-    <main className="min-h-screen overflow-hidden bg-slate-50 text-slate-950 transition-colors dark:bg-gray-950 dark:text-slate-50">
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.055)_1px,transparent_1px)] bg-[size:56px_56px] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.055)_1px,transparent_1px)]" />
+    <main className="min-h-screen overflow-hidden transition-colors">
+      
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
         <motion.header
           variants={fadeUp}
           initial="initial"
           animate="animate"
-          transition={{ duration: 0.45, ease: "easeOut" }}
+          transition={{ duration: 0.45, type: "spring", stiffness: 400, damping: 30 }}
           className="flex items-center justify-between"
         >
-          <div className="inline-flex h-10 items-center gap-2 rounded-full border border-gray-200 bg-white/80 px-4 text-sm font-semibold shadow-sm shadow-slate-200/60 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/20">
-            <Sparkles className="h-4 w-4 text-cyan-500" />
+          <div className="inline-flex h-10 items-center gap-2 rounded-full border border-black/[0.05] bg-white/80 px-4 text-sm font-semibold shadow-sm shadow-slate-200/60 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/20">
+            <Sparkles className="h-4 w-4 text-blue-500" />
             AI Prompt Dispatcher
           </div>
           <ThemeToggle />
@@ -278,10 +278,10 @@ export default function Home() {
             variants={fadeUp}
             initial="initial"
             animate="animate"
-            transition={{ delay: 0.05, duration: 0.5, ease: "easeOut" }}
+            transition={{ delay: 0.05, duration: 0.5, type: "spring", stiffness: 400, damping: 30 }}
             className="mx-auto max-w-3xl text-center"
           >
-            <p className="text-sm font-medium uppercase tracking-[0.28em] text-cyan-600 dark:text-cyan-400">
+            <p className="text-sm font-medium uppercase tracking-[0.28em] text-blue-600 dark:text-blue-400">
               Premium RTCFC prompt engine
             </p>
             <h1 className="mt-5 text-4xl font-semibold tracking-tight text-slate-950 sm:text-6xl dark:text-white">
@@ -297,8 +297,8 @@ export default function Home() {
             variants={fadeUp}
             initial="initial"
             animate="animate"
-            transition={{ delay: 0.12, duration: 0.5, ease: "easeOut" }}
-            className="mx-auto mt-10 w-full max-w-4xl rounded-2xl border border-gray-200 bg-white/85 p-6 shadow-2xl shadow-slate-200/70 backdrop-blur-xl sm:p-8 dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/30"
+            transition={{ delay: 0.12, duration: 0.5, type: "spring", stiffness: 400, damping: 30 }}
+            className="mx-auto mt-10 w-full max-w-4xl rounded-[2rem] border border border-black/[0.05] bg-white/70 p-6 shadow-xl shadow-black/[0.03] backdrop-blur-2xl sm:p-10 dark:border-white/[0.08] dark:bg-black/50 dark:shadow-black/50"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -328,7 +328,7 @@ export default function Home() {
                 setResult(null);
               }}
               placeholder="Example: build a subscription dashboard for a solo founder"
-              className="mt-5 min-h-[170px] w-full resize-none rounded-xl border border-gray-200 bg-slate-50/80 p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:bg-white focus:ring-4 focus:ring-cyan-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:text-white dark:placeholder:text-slate-600 dark:focus:border-cyan-500 dark:focus:bg-gray-950"
+              className="mt-5 min-h-[170px] w-full resize-none rounded-2xl border border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
             />
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -336,13 +336,14 @@ export default function Home() {
                 type="button"
                 onClick={requestClarifications}
                 disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
-                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-5 text-sm font-semibold text-slate-900 transition hover:border-cyan-300 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-100 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/30"
+                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-5 text-sm font-semibold text-slate-900 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-100 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
               >
                 {isClarifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 Guided Mode
               </button>
 
-              <AnimatePresence mode="wait">
+              {!isGuided && (
+                <AnimatePresence mode="wait">
                 {showGenerateButton ? (
                   <motion.button
                     key="generate"
@@ -352,14 +353,18 @@ export default function Home() {
                     initial={{ opacity: 0, y: 8, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                    transition={{ duration: 0.22, ease: "easeOut" }}
-                    className="inline-flex h-12 flex-[1.35] items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
+                    transition={{ duration: 0.22, type: "spring", stiffness: 400, damping: 30 }}
+                    className="inline-flex h-12 flex-[1.35] items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
                   >
                     {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                     {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
                   </motion.button>
                 ) : null}
               </AnimatePresence>
+              )}
+  
+
+              
             </div>
 
             <AnimatePresence>
@@ -383,7 +388,7 @@ export default function Home() {
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium leading-relaxed text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300"
+                  className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium leading-relaxed text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300"
                 >
                   {error}
                 </motion.div>
@@ -398,12 +403,12 @@ export default function Home() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                transition={{ duration: 0.32, ease: "easeOut" }}
-                className="mx-auto mt-5 w-full max-w-4xl overflow-hidden rounded-2xl border border-gray-200 bg-white/75 p-6 shadow-xl shadow-slate-200/50 backdrop-blur-xl sm:p-8 dark:border-gray-800 dark:bg-gray-900/60 dark:shadow-black/20"
+                transition={{ duration: 0.32, type: "spring", stiffness: 400, damping: 30 }}
+                className="mx-auto mt-5 w-full max-w-4xl overflow-hidden rounded-[2rem] border border-black/[0.05] bg-white/60 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl sm:p-10 dark:border-white/[0.08] dark:bg-black/40 dark:shadow-black/20"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-sm font-medium uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">
+                    <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
                       Guided Mode
                     </p>
                     <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
@@ -411,13 +416,13 @@ export default function Home() {
                     </h2>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="rounded-full border border-gray-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300">
+                    <span className="rounded-full border border-black/[0.05] bg-black/[0.02] px-4 py-2 text-sm font-semibold text-slate-600 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300">
                       {selectedCount}/{guidedStepCount}
                     </span>
                     <button
                       type="button"
                       onClick={resetGuidedMode}
-                      className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:hover:bg-gray-900"
+                      className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-gray-900"
                     >
                       Reset
                     </button>
@@ -432,7 +437,7 @@ export default function Home() {
                       initial="initial"
                       animate="animate"
                       transition={{ delay: questionIndex * 0.06, duration: 0.3 }}
-                      className="rounded-xl border border-gray-200 bg-slate-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/50"
+                      className="rounded-2xl border border border-black/[0.06] bg-white/90 shadow-inner p-4 dark:border-white/[0.08] dark:bg-[#1c1c1e]"
                     >
                       <p className="font-medium leading-relaxed text-slate-950 dark:text-white">
                         {question.question}
@@ -447,10 +452,10 @@ export default function Home() {
                               key={option}
                               onClick={() => chooseAnswer(question.id, option)}
                               className={cn(
-                                "min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-medium leading-relaxed transition",
+                                "min-h-12 rounded-2xl border px-3 py-2 text-left text-sm font-medium leading-relaxed transition",
                                 isSelected
-                                  ? "border-cyan-400 bg-cyan-50 text-cyan-900 shadow-sm shadow-cyan-500/10 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-100"
-                                  : "border-gray-200 bg-white text-slate-700 hover:border-cyan-300 hover:bg-cyan-50/60 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:hover:border-cyan-700 dark:hover:bg-cyan-950/20",
+                                  ? "border-blue-400 bg-blue-50 text-blue-900 shadow-sm shadow-blue-500/10 dark:border-blue-500 dark:bg-blue-950/40 dark:text-blue-100"
+                                  : "border-gray-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/60 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:border-blue-700 dark:hover:bg-blue-950/20",
                               )}
                             >
                               <span className="inline-flex items-center gap-2">
@@ -465,16 +470,44 @@ export default function Home() {
                           onChange={(event) => updateCustomAnswer(question.id, event.target.value)}
                           placeholder="Custom answer..."
                           className={cn(
-                            "min-h-12 rounded-xl border px-3 py-2 text-sm font-medium leading-relaxed outline-none transition",
+                            "min-h-12 rounded-2xl border px-3 py-2 text-sm font-medium leading-relaxed outline-none transition",
                             customAnswers[question.id]?.trim()
-                              ? "border-cyan-400 bg-cyan-50 text-cyan-900 shadow-sm shadow-cyan-500/10 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-100"
-                              : "border-gray-200 bg-white text-slate-700 placeholder:text-slate-400 hover:border-cyan-300 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-500/10 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-cyan-700",
+                              ? "border-blue-400 bg-blue-50 text-blue-900 shadow-sm shadow-blue-500/10 dark:border-blue-500 dark:bg-blue-950/40 dark:text-blue-100"
+                              : "border-gray-200 bg-white text-slate-700 placeholder:text-slate-400 hover:border-blue-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-blue-700",
                           )}
                         />
                       </div>
                     </motion.div>
                   ))}
-                </div>
+                
+                {hasCompletedGuidedFlow && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-6 flex justify-end border-t border-black/5 pt-6 dark:border-white/10"
+                  >
+                    <AnimatePresence mode="wait">
+                {showGenerateButton ? (
+                  <motion.button
+                    key="generate"
+                    type="button"
+                    onClick={generatePrompt}
+                    disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
+                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                    transition={{ duration: 0.22, type: "spring", stiffness: 400, damping: 30 }}
+                    className="inline-flex h-12 w-full sm:w-auto px-8 items-center justify-center gap-2 rounded-2xl bg-slate-950 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
+                  </motion.button>
+                ) : null}
+              </AnimatePresence>
+                  </motion.div>
+                )}
+  
+</div>
               </motion.section>
             ) : null}
           </AnimatePresence>
@@ -486,13 +519,13 @@ export default function Home() {
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                transition={{ duration: 0.35, ease: "easeOut" }}
+                transition={{ duration: 0.35, type: "spring", stiffness: 400, damping: 30 }}
                 className="mx-auto mt-5 grid w-full max-w-4xl gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"
               >
-                <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-xl shadow-slate-200/50 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/65 dark:shadow-black/20">
+                <div className="rounded-[2rem] border border-black/[0.05] bg-white/80 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl dark:border-gray-800 dark:bg-black/40 dark:shadow-black/20">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-sm font-medium uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">
+                      <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
                         Output
                       </p>
                       <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
@@ -503,17 +536,17 @@ export default function Home() {
                       type="button"
                       onClick={() => result && copyText("prompt", result.optimized_prompt)}
                       disabled={!result}
-                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-slate-300 dark:hover:bg-gray-900"
+                      className="inline-flex h-10 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-gray-900"
                     >
                       <Clipboard className="h-4 w-4" />
                       {copied === "prompt" ? "Copied" : "Copy"}
                     </button>
                   </div>
 
-                  <div className="mt-5 min-h-[340px] overflow-auto rounded-xl border border-gray-200 bg-slate-50 p-5 dark:border-gray-800 dark:bg-gray-950/80">
+                  <div className="mt-5 min-h-[340px] overflow-auto rounded-2xl border border-black/[0.05] bg-black/[0.02] p-5 dark:border-white/[0.08] dark:bg-black/60">
                     {isLoading ? (
                       <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 text-center text-slate-500 dark:text-slate-400">
-                        <RefreshCw className="h-7 w-7 animate-spin text-cyan-500" />
+                        <RefreshCw className="h-7 w-7 animate-spin text-blue-500" />
                         <p className="font-medium">Generating a structured RTCFC prompt.</p>
                       </div>
                     ) : result ? (
@@ -524,8 +557,8 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-gray-200 bg-white/80 p-5 shadow-xl shadow-slate-200/50 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/65 dark:shadow-black/20">
-                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">
+                <div className="rounded-[2rem] border border-black/[0.05] bg-white/80 p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl dark:border-gray-800 dark:bg-black/40 dark:shadow-black/20">
+                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
                     Routing
                   </p>
                   <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
@@ -544,10 +577,10 @@ export default function Home() {
                           onClick={() => setActiveTab(tab.id)}
                           disabled={!result}
                           className={cn(
-                            "rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
+                            "rounded-2xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
                             isActive
-                              ? "border-cyan-400 bg-cyan-50 text-cyan-950 dark:border-cyan-500 dark:bg-cyan-950/40 dark:text-cyan-50"
-                              : "border-gray-200 bg-slate-50 text-slate-700 hover:border-cyan-300 dark:border-gray-800 dark:bg-gray-950/70 dark:text-slate-300 dark:hover:border-cyan-700",
+                              ? "border-blue-400 bg-blue-50 text-blue-950 dark:border-blue-500 dark:bg-blue-950/40 dark:text-blue-50"
+                              : "border-black/[0.05] bg-black/[0.02] text-slate-700 hover:border-blue-300 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:border-blue-700",
                           )}
                         >
                           <span className="flex items-center gap-2 text-sm font-semibold">
@@ -562,7 +595,7 @@ export default function Home() {
                     })}
                   </div>
 
-                  <div className="mt-4 rounded-xl border border-gray-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-gray-950/80">
+                  <div className="mt-4 rounded-2xl border border-black/[0.05] bg-black/[0.02] p-4 dark:border-white/[0.08] dark:bg-black/60">
                     {activeRecommendation ? (
                       <div className="flex flex-col gap-4">
                         <div>
@@ -576,7 +609,7 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => copyAndOpen(activeRecommendation)}
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                         >
                           {copied === activeRecommendation.model_name ? "Copied Prompt" : "Copy & Open"}
                           <ExternalLink className="h-4 w-4" />
@@ -593,6 +626,20 @@ export default function Home() {
             )}
           </AnimatePresence>
         </section>
+
+        <footer className="mt-auto py-6 text-center">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            Developed by{" "}
+            <a
+              href="https://github.com/Nidan73"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-slate-900 transition hover:text-blue-600 dark:text-slate-200 dark:hover:text-blue-400"
+            >
+              Nidan Alam
+            </a>
+          </p>
+        </footer>
       </div>
     </main>
   );
@@ -607,7 +654,7 @@ function ThemeToggle() {
       type="button"
       aria-label="Toggle theme"
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="relative inline-flex h-10 w-[72px] items-center rounded-full border border-gray-200 bg-white p-1 shadow-sm shadow-slate-200/60 transition dark:border-gray-800 dark:bg-gray-900 dark:shadow-black/20"
+      className="relative inline-flex h-10 w-[72px] items-center rounded-full border border-black/[0.05] bg-white/70 p-1 shadow-sm backdrop-blur-md transition dark:border-white/[0.08] dark:bg-black/50"
     >
       <motion.span
         layout
@@ -615,7 +662,7 @@ function ThemeToggle() {
         className={cn(
           "absolute top-1 flex h-8 w-8 items-center justify-center rounded-full shadow-sm",
           isDark
-            ? "left-[34px] bg-slate-800 text-cyan-200"
+            ? "left-[34px] bg-slate-800 text-blue-200"
             : "left-1 bg-slate-950 text-amber-300",
         )}
       >

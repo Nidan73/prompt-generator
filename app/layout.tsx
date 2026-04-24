@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+});
 
 export const metadata: Metadata = {
   title: "AI Prompt Dispatcher",
@@ -33,7 +39,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>
+      <body className={`${inter.variable} antialiased`}>
         <Script
           id="theme-init"
           strategy="beforeInteractive"
