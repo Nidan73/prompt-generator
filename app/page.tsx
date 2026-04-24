@@ -323,7 +323,7 @@ export default function Home() {
                   Intent
                 </label>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                  Feeling Lazy , Write your Vauge Prompt Here 
+                  Feeling Lazy , write your vague Prompt Here 
                 </h2>
               </div>
               {isCoolingDown ? (
