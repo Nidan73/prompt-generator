@@ -1,6 +1,6 @@
-# AI Prompt Dispatcher
+# AI Prompt Generator
 
-**A Serverless, $0-Cost Prompt Engineering Engine**
+**Turn a vague idea into an expert-grade AI prompt — and know exactly where to run it.**
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
@@ -9,80 +9,79 @@
 ![Upstash](https://img.shields.io/badge/Upstash-Redis-00E9A3)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-AI Prompt Dispatcher turns vague, low-effort input into structured, execution-ready prompts using the **RTCFC framework**: Role, Task, Context, Format, and Constraints. It also routes each generated prompt to current AI platform recommendations using live Reddit model discussions instead of hardcoded model bias.
+AI Prompt Generator transforms rough, low-effort input into structured execution-ready prompts using the **RTCFC framework** (Role, Task, Context, Format, Constraints). It then routes each prompt to the best AI platform for the job using **ranking-based model analysis** — no hardcoded bias, no static model lists.
 
-The result is a fully serverless Next.js app with Guided Mode, animated premium UI, live model discovery, Redis-backed abuse protection, and a Groq free-tier fallback router.
+## What It Does
 
-## Overview
+1. **Accepts a rough idea** — "build a dashboard", "write a landing page", "explain quantum computing"
+2. **Guided Mode** (optional) — short multiple-choice questions sharpen the intent before generation
+3. **Generates a master RTCFC prompt** — structured, copy-ready, expert-grade
+4. **Recommends three AI platforms** — ranked by task fit across three tiers:
+   - **Open Source** — best open-weight model for the task
+   - **Freemium** — best free-tier consumer chat for the task
+   - **Premium** — absolute state-of-the-art for the task
+5. **Explains each recommendation** — every pick includes reasoning so you understand *why* that model was chosen
 
-Most prompt tools stop at rewriting text. AI Prompt Dispatcher does three things in one flow:
+## How Routing Works
 
-1. Accepts a rough user idea like `build a dashboard`, `explain RTCFC`, or `write a landing page`.
-2. Optionally asks short multiple-choice Guided Mode questions to extract missing prompt context.
-3. Generates a master RTCFC prompt and recommends three AI execution targets:
-   - **Open Source**
-   - **Freemium**
-   - **Premium**
+The routing system has **zero hardcoded model bias**. It works in two layers:
 
-The backend is stateless and serverless. There is no PostgreSQL, Firebase, MongoDB, or paid search API.
+| Layer | What it does | What it doesn't do |
+|---|---|---|
+| **Platform Registry** (`lib/ai-catalog.ts`) | Stores verified chat URLs for 12 platforms | No model names, no rankings, no opinions |
+| **LLM Ranking Engine** (system prompt) | Analyzes the task, ranks models by benchmark fit, picks platforms, explains why | Never invents URLs — picks from verified registry |
+
+The LLM acts as an expert AI analyst: it identifies task demands (coding, writing, math, research, etc.), considers benchmark standings (LMSYS ELO, MMLU, HumanEval, MATH, GPQA), and recommends the latest model version on the best platform.
+
+**To add a new platform**, add one line to `lib/ai-catalog.ts`. The LLM will automatically consider it for future recommendations.
 
 ## The $0 Architecture
 
-### Groq Fallback Engine
+### Multi-Provider Fallback Engine
 
-The generation route starts with Groq's `llama-3.3-70b-versatile` model. If Groq returns a `429` rate-limit response, the exact same payload is retried against a fallback chain:
+Free APIs have strict Requests-Per-Minute (RPM) limits. To prevent 429 rate limit errors when traffic spikes, the generation route automatically cascades through three free-tier endpoints via an OpenAI-compatible REST pipeline:
 
 ```txt
-llama-3.3-70b-versatile
-  -> openai/gpt-oss-120b
-  -> qwen/qwen3-32b
+1. Groq (llama-3.3-70b-versatile) — Fastest, but strict token cap.
+2. Gemini AI Studio (gemini-2.5-flash) — Massive 1M TPM allowance.
+3. OpenRouter (google/gemini-2.5-flash:free) — Uncapped routing fallback.
 ```
 
-This daisy-chains multiple free-tier model pools so the app can keep serving requests when the primary model hits token or request ceilings. Non-rate-limit failures are not swallowed; they bubble up as API errors so real problems remain visible.
+If any provider fails or rate-limits, the system silently retries with the next one. If you only configure a `GROQ_API_KEY`, the fallbacks are simply bypassed.
 
 ### Upstash Shield
 
-Every API route runs through an Upstash Redis sliding-window rate limiter before touching Groq:
+Every API route runs through Upstash Redis rate limiting before touching Groq:
 
 ```txt
 3 requests / 1 minute / IP
 ```
 
-When the limit is exceeded, the API returns `429` with `retryAfter` seconds. The frontend reads that value, disables generation, and displays a live cooldown timer.
-
-### Native Reddit JSON Search
-
-The generator uses Reddit's public JSON endpoint to pull current model discussions from `r/LocalLLaMA` with a task-aware query:
-
-```txt
-best [user task] model
-```
-
-Only the latest three post titles and short body snippets are sent to Groq to reduce token usage. The request uses native `fetch()`, a custom user agent, and one-hour Next.js revalidation, so the app avoids an extra scraping dependency while still getting live community context. If Reddit search fails, the model falls back to conservative internal reasoning.
+The frontend reads `retryAfter` from 429 responses and shows a live cooldown timer.
 
 ## Features
 
-- **RTCFC Prompt Engine**: Generates prompts with explicit Role, Task, Context, Format, and Constraints sections.
-- **Guided Mode**: Uses `llama-3.1-8b-instant` to create short multiple-choice questions, including a dynamic role/persona question tailored to the user's idea.
-- **Anti-Fragile Parsing**: Accepts `{ questions: [...] }` or raw arrays, trims extra questions/options, and discards malformed items instead of crashing.
-- **Dynamic AI Routing**: Uses live Reddit model discussions as the primary source for model/platform recommendations.
-- **Consumer Chat URLs Only**: Rejects obvious API docs, GitHub repos, model-weight pages, and base Hugging Face domains.
-- **Groq Free-Tier Fallbacks**: Retries on `429` across multiple Groq-hosted free-tier models.
-- **Redis Abuse Protection**: Upstash sliding-window rate limiting protects both `/api/clarify` and `/api/generate`.
-- **Premium Frontend**: Framer Motion transitions, glassmorphism cards, animated guided flow, and responsive layout.
-- **Dark Mode**: A local React theme provider plus a Next-managed boot script powers seamless light/dark switching with an animated Sun/Moon toggle.
-- **Copy & Open Flow**: Copies the generated prompt and opens the recommended chat platform.
+- **RTCFC Prompt Engine**: Structured prompts with Role, Task, Context, Format, and Constraints
+- **Guided Mode**: Dynamic multiple-choice questions generated by `llama-3.1-8b-instant`
+- **Ranking-Based Routing**: Model recommendations based on task analysis and benchmark knowledge
+- **Recommendation Reasoning**: Each platform pick includes a justification visible in the UI
+- **Platform Registry**: Verified chat URLs with deterministic fallbacks — zero hallucinated links
+- **Anti-Fragile Parsing**: Handles imperfect LLM JSON, strips markdown artifacts, resolves invalid picks
+- **Groq Free-Tier Fallbacks**: Automatic retry across multiple models on rate limits
+- **Redis Abuse Protection**: Sliding-window rate limiting on all API routes
+- **Error Boundary**: Runtime crashes show a recovery UI instead of a white screen
+- **Dark Mode**: Local theme provider with animated Sun/Moon toggle
+- **Copy & Open**: One-click copies the prompt and opens the recommended platform
 
 ## Tech Stack
 
 | Layer | Technology |
-| --- | --- |
+|---|---|
 | Framework | Next.js App Router |
 | UI | React, Tailwind CSS, Framer Motion, lucide-react |
 | Theme | Local class-based theme provider |
-| API Runtime | Next.js serverless route handlers |
 | AI | groq-sdk |
-| Search | Native `fetch()` against Reddit JSON |
+| Platform Routing | Verified registry + LLM ranking |
 | Rate Limit | @upstash/redis, @upstash/ratelimit |
 | Utility | clsx, tailwind-merge |
 
@@ -96,106 +95,116 @@ UPSTASH_REDIS_REST_URL="https://your-upstash-redis-url.upstash.io"
 UPSTASH_REDIS_REST_TOKEN="your_upstash_redis_rest_token"
 ```
 
-You can create keys here:
-
+Get keys:
 - Groq Console: https://console.groq.com/keys
 - Upstash Console: https://console.upstash.com/
 
 ## Installation & Setup
 
-Clone the repository:
-
 ```bash
 git clone https://github.com/Nidan73/prompt-generator.git
 cd prompt-generator
-```
-
-Install dependencies:
-
-```bash
 npm install
 ```
 
-Add environment variables:
+Add environment variables to a `.env.local` file in the root directory:
 
-```bash
-cp .env.local.example .env.local
+```env
+# Primary LLM API (Fastest) - Get from console.groq.com
+GROQ_API_KEY="gsk_..."
+
+# Secondary LLM Fallback (1M TPM) - Get from aistudio.google.com
+GEMINI_API_KEY="AIza..."
+
+# Tertiary LLM Fallback - Get from openrouter.ai
+OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Upstash Redis for Rate Limiting - Get from console.upstash.com
+UPSTASH_REDIS_REST_URL="https://..."
+UPSTASH_REDIS_REST_TOKEN="..."
 ```
 
-If `.env.local.example` does not exist yet, create `.env.local` manually using the variables shown above.
+The app will still function if you only provide the `GROQ_API_KEY`, but adding the other two enables massive free-tier scaling by cascading requests if Groq hits a rate limit.
 
-Run the development server:
+Run the dev server:
 
 ```bash
 npm run dev
 ```
 
-Open the app:
-
-```txt
-http://localhost:3000
-```
+Open: http://localhost:3000
 
 ## Available Scripts
 
 ```bash
-npm run dev
-npm run build
-npm run start
-npm run lint
+npm run dev      # Start development server
+npm run build    # Production build
+npm run start    # Start production server
+npm run lint     # Run ESLint
 ```
 
 ## API Flow
 
-### `/api/clarify`
+### `/api/clarify` — Guided Mode
 
-Guided Mode route.
+1. Rate limits by IP
+2. Sends the rough prompt to Groq `llama-3.1-8b-instant`
+3. Generates three multiple-choice clarification questions
+4. Parses LLM output defensively
+5. Returns normalized questions to the UI
 
-1. Rate limits by IP with Upstash.
-2. Sends the rough prompt to Groq `llama-3.1-8b-instant`.
-3. Requests exactly three multiple-choice clarification questions.
-4. Parses slightly imperfect LLM output defensively.
-5. Returns normalized questions to the UI.
+### `/api/generate` — Prompt Generation & Routing
 
-### `/api/generate`
-
-Dispatcher route.
-
-1. Rate limits by IP with Upstash.
-2. Fetches current `r/LocalLLaMA` model discussions through Reddit JSON.
-3. Compresses search payload to the latest three titles and short body snippets.
-4. Builds the dynamic RTCFC system prompt.
-5. Calls Groq with fallback routing:
-
-```txt
-llama-3.3-70b-versatile -> openai/gpt-oss-120b -> qwen/qwen3-32b
-```
-
-6. Parses the strict JSON response:
+1. Rate limits by IP
+2. Builds the RTCFC system prompt with platform registry
+3. Calls Groq with fallback chain
+4. LLM returns:
+   - Structured RTCFC prompt
+   - Platform picks (IDs from registry)
+   - Dynamic model names
+   - Reasoning for each pick
+5. Backend resolves platform IDs to verified URLs
+6. Returns complete response to frontend
 
 ```ts
 {
   optimized_prompt: string;
   recommendations: {
-    open_source: { model_name: string; platform_url: string };
-    freemium: { model_name: string; platform_url: string };
-    premium: { model_name: string; platform_url: string };
+    open_source: { model_name: string; platform_url: string; reasoning: string };
+    freemium: { model_name: string; platform_url: string; reasoning: string };
+    premium: { model_name: string; platform_url: string; reasoning: string };
   };
 }
 ```
 
 ## Safety & Reliability
 
-- Secrets stay in `.env.local`, which is ignored by Git.
-- API routes are stateless and serverless.
-- Redis rate limiting runs before Groq calls.
-- Reddit lookup failures are caught and logged so generation can continue with conservative internal routing.
-- URL validation blocks common non-chat destinations.
-- JSON validation prevents malformed LLM responses from silently corrupting UI state.
+- Secrets in `.env.local` (git-ignored)
+- Stateless, serverless API routes
+- Redis rate limiting before Groq calls
+- Platform URLs from verified registry — no hallucinated links
+- Deterministic fallbacks for invalid LLM picks
+- Error boundary for runtime crash recovery
+- Anti-fragile JSON parsing with markdown stripping
 
-## Local Project Context
+## Project Structure
 
-Maintainer-only architecture notes live in `PROJECT_CONTEXT.md`. This file is intentionally listed in `.gitignore` so private implementation context, decision history, and local notes stay on your machine and are not pushed to GitHub.
+```
+prompt-generator/
+├── app/
+│   ├── api/
+│   │   ├── clarify/route.ts    # Guided Mode question generation
+│   │   └── generate/route.ts   # RTCFC prompt + ranking-based routing
+│   ├── error.tsx               # Error boundary
+│   ├── globals.css             # Design tokens
+│   ├── layout.tsx              # Root layout + theme boot
+│   └── page.tsx                # Main UI (single-page app)
+├── components/
+│   └── theme-provider.tsx      # Light/dark theme system
+├── lib/
+│   └── ai-catalog.ts           # Platform registry (URL phone book)
+└── PROJECT_CONTEXT.md          # Local-only maintainer notes
+```
 
 ## License
 

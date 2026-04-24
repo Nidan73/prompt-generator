@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/components/theme-provider";
 import clsx from "clsx";
@@ -32,6 +32,7 @@ type RecommendationTier = "open_source" | "freemium" | "premium";
 type Recommendation = {
   model_name: string;
   platform_url: string;
+  reasoning: string;
 };
 
 type DispatcherResponse = {
@@ -92,9 +93,12 @@ export default function Home() {
   const [cooldownTimer, setCooldownTimer] = useState(0);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const trimmedPrompt = prompt.trim();
+  const wordCount = trimmedPrompt ? trimmedPrompt.split(/\s+/).length : 0;
   const hasPrompt = trimmedPrompt.length > 0;
+  const hasEnoughContext = wordCount >= 3;
   const isCoolingDown = cooldownTimer > 0;
   const isGuided = questions.length > 0;
   const answeredQuestionCount = questions.filter((question) => answers[question.id]?.trim()).length;
@@ -125,7 +129,7 @@ export default function Home() {
   }, [isCoolingDown]);
 
   async function requestClarifications() {
-    if (!hasPrompt || isCoolingDown) {
+    if (!hasEnoughContext || isCoolingDown) {
       return;
     }
 
@@ -158,7 +162,7 @@ export default function Home() {
   }
 
   async function generatePrompt() {
-    if (!hasPrompt || isCoolingDown) {
+    if (!hasEnoughContext || isCoolingDown) {
       return;
     }
 
@@ -207,11 +211,10 @@ export default function Home() {
       ...current,
       [questionId]: option,
     }));
-    setCustomAnswers((current) => {
-      const next = { ...current };
-      delete next[questionId];
-      return next;
-    });
+    setCustomAnswers((current) => ({
+      ...current,
+      [questionId]: "",
+    }));
   }
 
   function updateCustomAnswer(questionId: string, value: string) {
@@ -241,7 +244,10 @@ export default function Home() {
   async function copyText(label: string, text: string) {
     await navigator.clipboard.writeText(text);
     setCopied(label);
-    window.setTimeout(() => setCopied(""), 1600);
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    copyTimeoutRef.current = setTimeout(() => setCopied(""), 1600);
   }
 
   async function copyAndOpen(recommendation: Recommendation) {
@@ -268,7 +274,7 @@ export default function Home() {
         >
           <div className="inline-flex h-10 items-center gap-2 rounded-full border border-black/[0.05] bg-white/80 px-4 text-sm font-semibold shadow-sm shadow-slate-200/60 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/20">
             <Sparkles className="h-4 w-4 text-blue-500" />
-            AI Prompt Dispatcher
+            AI Prompt Generator
           </div>
           <ThemeToggle />
         </motion.header>
@@ -282,7 +288,7 @@ export default function Home() {
             className="mx-auto max-w-3xl text-center"
           >
             <p className="text-sm font-medium uppercase tracking-[0.28em] text-blue-600 dark:text-blue-400">
-              Premium RTCFC prompt engine
+              Prompt engine
             </p>
             <h1 className="mt-5 text-4xl font-semibold tracking-tight text-slate-950 sm:text-6xl dark:text-white">
               Turn a rough idea into an expert-grade execution prompt.
@@ -298,7 +304,7 @@ export default function Home() {
             initial="initial"
             animate="animate"
             transition={{ delay: 0.12, duration: 0.5, type: "spring", stiffness: 400, damping: 30 }}
-            className="mx-auto mt-10 w-full max-w-4xl rounded-[2rem] border border border-black/[0.05] bg-white/70 p-6 shadow-xl shadow-black/[0.03] backdrop-blur-2xl sm:p-10 dark:border-white/[0.08] dark:bg-black/50 dark:shadow-black/50"
+            className="mx-auto mt-10 w-full max-w-4xl rounded-[2rem] border border-black/[0.05] bg-white/70 p-6 shadow-xl shadow-black/[0.03] backdrop-blur-2xl sm:p-10 dark:border-white/[0.08] dark:bg-black/50 dark:shadow-black/50"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -323,20 +329,30 @@ export default function Home() {
             <textarea
               id="prompt"
               value={prompt}
-              onChange={(event) => {
-                setPrompt(event.target.value);
-                setResult(null);
-              }}
+              onChange={(event) => setPrompt(event.target.value)}
               placeholder="Example: build a subscription dashboard for a solo founder"
-              className="mt-5 min-h-[170px] w-full resize-none rounded-2xl border border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
+              className="mt-5 min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
             />
+            <AnimatePresence>
+              {hasPrompt && !hasEnoughContext ? (
+                <motion.p
+                  variants={fadeUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="mt-3 text-sm font-medium text-amber-600 dark:text-amber-400"
+                >
+                  Add a bit more detail — describe what you want to build or accomplish.
+                </motion.p>
+              ) : null}
+            </AnimatePresence>
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
                 onClick={requestClarifications}
-                disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
-                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-5 text-sm font-semibold text-slate-900 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-100 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
+                disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
+                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-5 text-sm font-semibold text-slate-900 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-100 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
               >
                 {isClarifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 Guided Mode
@@ -349,7 +365,7 @@ export default function Home() {
                     key="generate"
                     type="button"
                     onClick={generatePrompt}
-                    disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
+                    disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
                     initial={{ opacity: 0, y: 8, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -422,7 +438,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={resetGuidedMode}
-                      className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-gray-900"
+                      className="rounded-full border border-black/[0.05] bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-black/[0.02] dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-black/40"
                     >
                       Reset
                     </button>
@@ -437,7 +453,7 @@ export default function Home() {
                       initial="initial"
                       animate="animate"
                       transition={{ delay: questionIndex * 0.06, duration: 0.3 }}
-                      className="rounded-2xl border border border-black/[0.06] bg-white/90 shadow-inner p-4 dark:border-white/[0.08] dark:bg-[#1c1c1e]"
+                      className="rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-4 dark:border-white/[0.08] dark:bg-[#1c1c1e]"
                     >
                       <p className="font-medium leading-relaxed text-slate-950 dark:text-white">
                         {question.question}
@@ -455,7 +471,7 @@ export default function Home() {
                                 "min-h-12 rounded-2xl border px-3 py-2 text-left text-sm font-medium leading-relaxed transition",
                                 isSelected
                                   ? "border-blue-400 bg-blue-50 text-blue-900 shadow-sm shadow-blue-500/10 dark:border-blue-500 dark:bg-blue-950/40 dark:text-blue-100"
-                                  : "border-gray-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/60 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:border-blue-700 dark:hover:bg-blue-950/20",
+                                  : "border-black/[0.05] bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/60 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:border-blue-700 dark:hover:bg-blue-950/20",
                               )}
                             >
                               <span className="inline-flex items-center gap-2">
@@ -473,7 +489,7 @@ export default function Home() {
                             "min-h-12 rounded-2xl border px-3 py-2 text-sm font-medium leading-relaxed outline-none transition",
                             customAnswers[question.id]?.trim()
                               ? "border-blue-400 bg-blue-50 text-blue-900 shadow-sm shadow-blue-500/10 dark:border-blue-500 dark:bg-blue-950/40 dark:text-blue-100"
-                              : "border-gray-200 bg-white text-slate-700 placeholder:text-slate-400 hover:border-blue-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-blue-700",
+                              : "border-black/[0.05] bg-white text-slate-700 placeholder:text-slate-400 hover:border-blue-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-blue-700",
                           )}
                         />
                       </div>
@@ -486,24 +502,15 @@ export default function Home() {
                     animate={{ opacity: 1, y: 0 }}
                     className="mt-6 flex justify-end border-t border-black/5 pt-6 dark:border-white/10"
                   >
-                    <AnimatePresence mode="wait">
-                {showGenerateButton ? (
-                  <motion.button
-                    key="generate"
-                    type="button"
-                    onClick={generatePrompt}
-                    disabled={!hasPrompt || isClarifying || isLoading || isCoolingDown}
-                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                    transition={{ duration: 0.22, type: "spring", stiffness: 400, damping: 30 }}
-                    className="inline-flex h-12 w-full sm:w-auto px-8 items-center justify-center gap-2 rounded-2xl bg-slate-950 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
-                  >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
-                  </motion.button>
-                ) : null}
-              </AnimatePresence>
+                    <button
+                      type="button"
+                      onClick={generatePrompt}
+                      disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
+                      className="inline-flex h-12 w-full sm:w-auto px-8 items-center justify-center gap-2 rounded-2xl bg-slate-950 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
+                    >
+                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
+                    </button>
                   </motion.div>
                 )}
   
@@ -536,7 +543,7 @@ export default function Home() {
                       type="button"
                       onClick={() => result && copyText("prompt", result.optimized_prompt)}
                       disabled={!result}
-                      className="inline-flex h-10 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-gray-900"
+                      className="inline-flex h-10 items-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-black/40"
                     >
                       <Clipboard className="h-4 w-4" />
                       {copied === "prompt" ? "Copied" : "Copy"}
@@ -575,7 +582,7 @@ export default function Home() {
                           type="button"
                           key={tab.id}
                           onClick={() => setActiveTab(tab.id)}
-                          disabled={!result}
+                          disabled={!result || isLoading}
                           className={cn(
                             "rounded-2xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
                             isActive
@@ -602,14 +609,18 @@ export default function Home() {
                           <h3 className="text-lg font-semibold tracking-tight text-slate-950 dark:text-white">
                             {activeRecommendation.model_name}
                           </h3>
-                          <p className="mt-2 break-words text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                          <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                            {activeRecommendation.reasoning}
+                          </p>
+                          <p className="mt-1 break-words text-xs leading-relaxed text-slate-400 dark:text-slate-500">
                             {activeRecommendation.platform_url}
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => copyAndOpen(activeRecommendation)}
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+                          disabled={isLoading}
+                          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                         >
                           {copied === activeRecommendation.model_name ? "Copied Prompt" : "Copy & Open"}
                           <ExternalLink className="h-4 w-4" />

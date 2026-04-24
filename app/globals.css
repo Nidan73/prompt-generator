@@ -27,6 +27,6 @@ html.dark {
 }
 
 ::selection {
-  background: #14b8a6;
+  background: var(--accent);
   color: #ffffff;
 }

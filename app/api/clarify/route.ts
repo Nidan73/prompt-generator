@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
-export const runtime = "nodejs";
+export const runtime = "edge";
 
 type ClarifyRequest = {
   prompt?: unknown;
@@ -15,9 +15,34 @@ export type ClarifyingQuestion = {
   options: string[];
 };
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+// Multi-provider fallback chain for high-speed clarifying questions.
+type ProviderConfig = {
+  name: string;
+  url: string;
+  model: string;
+  apiKey: string | undefined;
+};
+
+const PROVIDER_CHAIN: ProviderConfig[] = [
+  {
+    name: "Groq",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    model: "llama-3.1-8b-instant",
+    apiKey: process.env.GROQ_API_KEY,
+  },
+  {
+    name: "Gemini",
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    model: "gemini-2.5-flash",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
+    name: "OpenRouter",
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    model: "meta-llama/llama-3.1-8b-instruct:free",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  }
+];
 
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
@@ -87,28 +112,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
-      messages: [
-        {
-          role: "system",
-          content: SYSTEM_PROMPT,
-        },
-        {
-          role: "user",
-          content: `Create guided-mode clarification questions for this rough prompt:\n${userPrompt}`,
-        },
-      ],
-      temperature: 0.35,
-      max_completion_tokens: 700,
-      response_format: { type: "json_object" },
-    });
-
-    let content = completion.choices[0]?.message.content;
-
-    if (!content) {
-      throw new Error("Groq returned an empty clarification response.");
-    }
+    const userContent = `Create guided-mode clarification questions for this rough prompt:\n${userPrompt}`;
+    let content = await callLLMWithFallback(SYSTEM_PROMPT, userContent, PROVIDER_CHAIN);
 
     // Aggressive regex to strip any markdown hallucinations before parsing
     content = content
@@ -144,6 +149,54 @@ function getClientIdentifier(request: NextRequest) {
   const cloudflareIp = request.headers.get("cf-connecting-ip");
 
   return forwardedFor || realIp || cloudflareIp || "anonymous";
+}
+
+async function callLLMWithFallback(systemPrompt: string, userContent: string, chain: ProviderConfig[]): Promise<string> {
+  let lastError: unknown = new Error("No API keys configured or all providers failed.");
+
+  for (const provider of chain) {
+    if (!provider.apiKey) continue;
+
+    try {
+      const response = await fetch(provider.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent },
+          ],
+          temperature: 0.35,
+          max_completion_tokens: 700,
+          response_format: { type: "json_object" },
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(`Provider ${provider.name} failed with status ${response.status}`);
+        }
+        const errorText = await response.text();
+        throw new Error(`Fatal error from ${provider.name}: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) throw new Error(`${provider.name} returned an empty completion.`);
+      return content;
+      
+    } catch (error) {
+      lastError = error;
+      console.warn(`Clarify Fallback triggered: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  throw lastError;
 }
 
 function normalizePrompt(prompt: unknown) {

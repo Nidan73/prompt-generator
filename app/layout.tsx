@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Analytics } from '@vercel/analytics/react';
 import "./globals.css";
 
 const inter = Inter({
@@ -10,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AI Prompt Dispatcher",
+  title: "AI Prompt Generator",
   description: "Generate stronger prompts and route them to the right AI platforms.",
 };
 
@@ -25,8 +26,11 @@ const themeInitScript = `
         ? "dark"
         : "light";
     var root = document.documentElement;
-
-    root.classList.toggle("dark", resolvedTheme === "dark");
+    if (resolvedTheme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
     root.style.colorScheme = resolvedTheme;
   } catch (_) {}
 })();
@@ -46,6 +50,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: themeInitScript }}
         />
         <ThemeProvider>{children}</ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );

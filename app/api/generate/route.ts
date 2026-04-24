@@ -1,56 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { buildRegistryBlock, resolveRecommendations, getLiveModelLandscape } from "@/lib/ai-catalog";
 
-export const runtime = "nodejs";
-
-type Recommendation = {
-  model_name: string;
-  platform_url: string;
-};
-
-type DispatcherResponse = {
-  optimized_prompt: string;
-  recommendations: {
-    open_source: Recommendation;
-    freemium: Recommendation;
-    premium: Recommendation;
-  };
-};
+export const runtime = "edge";
 
 type GenerateRequest = {
   prompt?: unknown;
   clarifications?: unknown;
 };
 
-type RedditSearchResponse = {
-  data?: {
-    children?: Array<{
-      data?: {
-        title?: string;
-        selftext?: string;
-      };
-    }>;
+type DispatcherResponse = {
+  optimized_prompt: string;
+  recommendations: {
+    open_source: { model_name: string; platform_url: string; reasoning: string };
+    freemium: { model_name: string; platform_url: string; reasoning: string };
+    premium: { model_name: string; platform_url: string; reasoning: string };
   };
 };
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+// Multi-provider fallback chain. System tries these in order.
+// If a key is missing or a 429/500 occurs, it automatically falls back to the next provider.
+type ProviderConfig = {
+  name: string;
+  url: string;
+  model: string;
+  apiKey: string | undefined;
+};
+
+const PROVIDER_CHAIN: ProviderConfig[] = [
+  {
+    name: "Groq",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    model: "llama-3.3-70b-versatile",
+    apiKey: process.env.GROQ_API_KEY,
+  },
+  {
+    name: "Gemini",
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    model: "gemini-2.5-flash",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
+    name: "OpenRouter",
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    model: "google/gemini-2.5-flash:free",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  }
+];
 
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
   limiter: Ratelimit.slidingWindow(3, "1 m"),
   analytics: true,
-  prefix: "@prompt-dispatcher/generate",
+  prefix: "@prompt-generator/generate",
 });
 
-const MODEL_CHAIN = [
-  "llama-3.3-70b-versatile",
-  "openai/gpt-oss-120b",
-  "qwen/qwen3-32b",
-] as const;
+const REGISTRY_BLOCK = buildRegistryBlock();
 
 export async function POST(request: NextRequest) {
   const identifier = getClientIdentifier(request);
@@ -60,10 +67,7 @@ export async function POST(request: NextRequest) {
     const retryAfter = Math.max(1, Math.ceil((limit.reset - Date.now()) / 1000));
 
     return NextResponse.json(
-      {
-        error: "Rate limit exceeded. Please wait before trying again.",
-        retryAfter,
-      },
+      { error: "Rate limit exceeded. Please wait before trying again.", retryAfter },
       {
         status: 429,
         headers: {
@@ -91,43 +95,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Fetch the latest 3 posts from r/LocalLLaMA regarding the user's task.
-    let searchContext = "";
-    try {
-      const searchQuery = encodeURIComponent(`best ${userPrompt.slice(0, 50)} model`);
-      const redditRes = await fetch(
-        `https://www.reddit.com/r/LocalLLaMA/search.json?q=${searchQuery}&restrict_sr=on&sort=new&limit=3`,
-        {
-          headers: { "User-Agent": "AIPromptDispatcher/1.0" },
-          next: { revalidate: 3600 },
-        },
-      );
-
-      if (redditRes.ok) {
-        const redditData = (await redditRes.json()) as RedditSearchResponse;
-        const posts = redditData?.data?.children || [];
-
-        searchContext = posts
-          .map((post) => {
-            const title = post.data?.title?.trim() || "Untitled Reddit discussion";
-            const selftext = post.data?.selftext?.trim().slice(0, 200) || "";
-
-            return `${title}: ${selftext}`;
-          })
-          .join(" | ");
-      } else {
-        console.warn("Reddit search failed with status:", redditRes.status);
-      }
-    } catch (error) {
-      console.error("Reddit fetch crashed:", error);
-    }
-
-    const llmContent = await createDispatcherCompletion(
-      userPrompt,
-      body.clarifications,
-      searchContext,
-    );
-    const parsed = parseDispatcherResponse(llmContent);
+    const liveLandscape = await getLiveModelLandscape();
+    const llmContent = await createDispatcherCompletion(userPrompt, body.clarifications, liveLandscape);
+    const parsed = parseAndResolve(llmContent);
 
     return NextResponse.json(parsed, {
       headers: {
@@ -138,101 +108,52 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Prompt generation failed", error);
-
-    return NextResponse.json(
-      { error: "Unable to generate a dispatcher prompt right now." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Unable to generate a prompt right now." }, { status: 500 });
   }
 }
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function getClientIdentifier(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const realIp = request.headers.get("x-real-ip");
   const cloudflareIp = request.headers.get("cf-connecting-ip");
-
   return forwardedFor || realIp || cloudflareIp || "anonymous";
 }
 
 function normalizePrompt(prompt: unknown) {
-  if (typeof prompt !== "string") {
-    return "";
-  }
-
+  if (typeof prompt !== "string") return "";
   return prompt.trim().slice(0, 4000);
 }
 
 function serializeClarifications(clarifications: unknown) {
-  if (!clarifications) {
-    return "None provided.";
-  }
-
-  if (typeof clarifications === "string") {
-    return clarifications.trim().slice(0, 2000) || "None provided.";
-  }
-
-  try {
-    return JSON.stringify(clarifications).slice(0, 2000);
-  } catch {
-    return "None provided.";
-  }
+  if (!clarifications) return "None provided.";
+  if (typeof clarifications === "string") return clarifications.trim().slice(0, 2000) || "None provided.";
+  try { return JSON.stringify(clarifications).slice(0, 2000); } catch { return "None provided."; }
 }
 
-async function createDispatcherCompletion(
-  userPrompt: string,
-  clarifications: unknown,
-  searchContext: string,
-) {
+// ─── LLM Orchestration ────────────────────────────────────────────────────────
+
+async function createDispatcherCompletion(userPrompt: string, clarifications: unknown, liveLandscape: string) {
   const selectedOptions = serializeClarifications(clarifications);
-  const systemPrompt = buildSystemPrompt(userPrompt, selectedOptions, searchContext);
+  const systemPrompt = buildSystemPrompt(userPrompt, selectedOptions, liveLandscape);
   const userContent = "Return the strict JSON response now.";
 
-  try {
-    return await callGroq(MODEL_CHAIN[0], systemPrompt, userContent);
-  } catch (error) {
-    if (!isRateLimitError(error)) {
-      throw error;
-    }
-
-    let lastError: unknown = error;
-
-    for (const model of MODEL_CHAIN.slice(1)) {
-      try {
-        return await callGroq(model, systemPrompt, userContent);
-      } catch (fallbackError) {
-        lastError = fallbackError;
-
-        if (!isRateLimitError(fallbackError)) {
-          throw fallbackError;
-        }
-      }
-    }
-
-    throw lastError;
-  }
+  return await callLLMWithFallback(systemPrompt, userContent, PROVIDER_CHAIN);
 }
 
-function buildSystemPrompt(userPrompt: string, selectedOptions: string, searchContext: string) {
-  const liveSearchData =
-    searchContext.trim() ||
-    "No useful Reddit search data found. Use internal training data conservatively.";
+function buildSystemPrompt(userPrompt: string, selectedOptions: string, liveLandscape: string) {
+  return `You are an elite Prompt Engineer and an expert AI Model Analyst. You follow AI benchmarks, leaderboards (LMSYS Chatbot Arena ELO, LiveBench, MMLU, HumanEval, MATH, GPQA), and industry developments closely. You have no loyalty to any company or model.
 
-  return `You are an elite Prompt Engineer and AI Dispatcher. Your job is to generate a master prompt and route the user to the best current AI platforms.
+Your job has two parts.
 
-Part 1: The Dynamic Master Prompt
-Use the RTCFC framework to expand the user's vague input.
+PART 1 — MASTER PROMPT
+Expand the user's rough input into a structured, expert-grade prompt using the RTCFC framework.
 
-CRITICAL FORMATTING RULES:
-
-You are WRITING the final prompt for the user to copy/paste.
-
-Act as the user.
-
-DO NOT output any instructional text or meta-commentary.
-
-Replace the ALL-CAPS text with your generated prompt.
-
-Format exactly like this in Markdown:
+Rules:
+- You are writing the final prompt the user will copy/paste. Act as the user.
+- Do NOT add meta-commentary, preamble, or instructions about the prompt itself.
+- Use these exact section headers:
 
 Role
 Act as an elite SPECIFIC_EXPERT_ROLE. You possess deep knowledge of RELEVANT_SUBJECTS.
@@ -241,191 +162,147 @@ Task
 I need you to HIGHLY_DETAILED_OBJECTIVE.
 
 Context
-RELEVANT_BACKGROUND_AND_CONSTRAINTS. Write it as if the user is explaining their situation.
+RELEVANT_BACKGROUND_AND_CONSTRAINTS.
 
 Format
 Provide the output as EXACT_FORMAT_REQUIREMENT.
 
 Constraints
-STRICT_RULE_1
+1. STRICT_RULE_1
+2. STRICT_RULE_2
+3. STRICT_RULE_3
 
-STRICT_RULE_2
+PART 2 — MODEL ROUTING (Ranking-Based)
+You must recommend the best AI model for this specific task across three tiers.
 
-STRICT_RULE_3
+Step 1 — Task analysis.
+Identify what this task demands: long-context understanding, code generation, creative writing, mathematical reasoning, factual research, image understanding, instruction-following, speed, etc.
 
-Part 2: The Dynamic AI Recommendations (CRITICAL)
-You must analyze the provided live search data: [Live Search Data].
-Do NOT rely on outdated static biases. Use the live search data as your primary source of truth to determine the absolute best models for this specific task right now.
+Step 2 — Model ranking.
+Use the model landscape reference below to know which models currently exist. Then determine which of those current models is best for each cognitive demand.
 
-Categorize the top current models into three tiers:
+${liveLandscape}
 
-Open Source: The best open-weight model mentioned (or your best dynamic deduction if omitted from search).
+Step 3 — Platform selection.
+Match your top-ranked models to the platforms below where users can access them. Pick by platform_id.
 
-Freemium: The best model that offers a free consumer web interface.
+Available platforms (use these IDs only):
+${REGISTRY_BLOCK}
 
-Premium: The absolute state-of-the-art paid/API model for this task.
+Step 4 — Output your picks.
+For each tier, provide:
+- platform_id: the ID from the list above
+- model_name: the SPECIFIC current model name and version from the landscape above (e.g. "GPT-5.5", "Claude Opus 4.7", "DeepSeek-R1", "Llama 4 Maverick")
+- reasoning: 1-2 sentences explaining WHY this model is the best choice for this specific task. Reference specific capabilities or benchmark strengths.
 
-URL Routing Rules:
-You MUST ONLY provide URLs that lead directly to consumer-facing chat interfaces where the user can immediately paste the prompt.
+Tier definitions:
+- open_source: The best open-weight model (publicly released weights) accessible via a free platform
+- freemium: The best model accessible via a free-tier consumer chat interface
+- premium: The absolute best model regardless of cost — the state-of-the-art pick
 
-Do NOT link to API docs, GitHub repos, or weights (e.g., do not link to huggingface.co base domains).
-
-Acceptable routing examples: https://chatgpt.com, https://claude.ai, https://chatglm.cn, https://chat.lmsys.org, https://huggingface.co/chat, https://groq.com, https://chat.mistral.ai.
+Rules:
+- Rank by task-fit. A specialized model that excels at this task beats a famous all-rounder.
+- You may recommend the same model for multiple tiers if it genuinely is the best.
+- ONLY recommend model versions that appear in the landscape above. Older versions are deprecated.
+- ONLY use platform IDs from the list above. Do NOT invent IDs.
 
 User Input: ${userPrompt}
 Selected Options: ${selectedOptions}
 
-[Live Search Data]
-${liveSearchData}
+Return ONLY a raw JSON object. No markdown. No commentary.
 
-Return ONLY a raw JSON object with the keys: optimized_prompt (string containing the markdown), and recommendations (object containing open_source, freemium, and premium, each with model_name and platform_url).
-
-The optimized_prompt string must contain these Markdown section headers exactly:
-Role
-Task
-Context
-Format
-Constraints
-
-The JSON object must exactly match this shape:
 {
   "optimized_prompt": "Role\\n...\\n\\nTask\\n...\\n\\nContext\\n...\\n\\nFormat\\n...\\n\\nConstraints\\n1. ...",
-  "recommendations": {
-    "open_source": {
-      "model_name": "string",
-      "platform_url": "consumer chat URL"
-    },
-    "freemium": {
-      "model_name": "string",
-      "platform_url": "consumer chat URL"
-    },
-    "premium": {
-      "model_name": "string",
-      "platform_url": "consumer chat URL"
-    }
+  "routing": {
+    "open_source": { "platform_id": "id", "model_name": "specific model name", "reasoning": "why this model" },
+    "freemium": { "platform_id": "id", "model_name": "specific model name", "reasoning": "why this model" },
+    "premium": { "platform_id": "id", "model_name": "specific model name", "reasoning": "why this model" }
   }
 }`;
 }
 
-async function callGroq(
-  model: (typeof MODEL_CHAIN)[number],
-  systemPrompt: string,
-  userContent: string,
-) {
-  const completion = await groq.chat.completions.create({
-    model,
-    messages: [
-      {
-        role: "system",
-        content: systemPrompt,
-      },
-      {
-        role: "user",
-        content: userContent,
-      },
-    ],
-    temperature: 0.3,
-    max_completion_tokens: 2400,
-    response_format: { type: "json_object" },
-  });
+async function callLLMWithFallback(systemPrompt: string, userContent: string, chain: ProviderConfig[]): Promise<string> {
+  let lastError: unknown = new Error("No API keys configured or all providers failed.");
 
-  const content = completion.choices[0]?.message.content;
+  for (const provider of chain) {
+    if (!provider.apiKey) continue;
 
-  if (!content) {
-    throw new Error("Groq returned an empty completion.");
+    try {
+      const response = await fetch(provider.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent },
+          ],
+          temperature: 0.3,
+          max_completion_tokens: 3200,
+          response_format: { type: "json_object" },
+        }),
+      });
+
+      if (!response.ok) {
+        // Fallback on Rate Limits (429) or Server Errors (5xx)
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(`Provider ${provider.name} failed with status ${response.status}`);
+        }
+        // Throw fatal error for 400 Bad Request, 401 Unauthorized, etc.
+        const errorText = await response.text();
+        throw new Error(`Fatal error from ${provider.name}: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) throw new Error(`${provider.name} returned an empty completion.`);
+      return content;
+      
+    } catch (error) {
+      lastError = error;
+      // If it's a fatal client error, don't keep retrying with other models from the same code if they'd fail identically
+      // But since we are switching providers entirely, retrying is safe.
+      console.warn(`Fallback triggered: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
-  return content;
+  throw lastError;
 }
 
-function isRateLimitError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "status" in error &&
-    (error as { status?: unknown }).status === 429
-  );
-}
+// ─── Response Parsing ──────────────────────────────────────────────────────────
 
-function parseDispatcherResponse(content: string): DispatcherResponse {
-  const parsed = JSON.parse(content) as unknown;
+function parseAndResolve(content: string): DispatcherResponse {
+  const cleanContent = content.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const parsed = JSON.parse(cleanContent) as unknown;
 
-  if (!isDispatcherResponse(parsed)) {
-    throw new Error("Groq returned JSON that does not match the dispatcher schema.");
+  if (!isRecord(parsed) || typeof parsed.optimized_prompt !== "string" || !parsed.optimized_prompt.trim()) {
+    throw new Error("LLM response missing optimized_prompt.");
   }
 
-  return parsed;
-}
+  const routing = isRecord(parsed.routing) ? parsed.routing : {};
+  const picks: Record<string, { platform_id: string; model_name: string; reasoning: string }> = {};
 
-function isDispatcherResponse(value: unknown): value is DispatcherResponse {
-  if (!isRecord(value)) {
-    return false;
+  for (const tier of ["open_source", "freemium", "premium"]) {
+    const entry = isRecord(routing[tier]) ? routing[tier] : {};
+    picks[tier] = {
+      platform_id: typeof entry.platform_id === "string" ? entry.platform_id : "",
+      model_name: typeof entry.model_name === "string" ? entry.model_name : "",
+      reasoning: typeof entry.reasoning === "string" ? entry.reasoning : "",
+    };
   }
 
-  if (typeof value.optimized_prompt !== "string" || !value.optimized_prompt.trim()) {
-    return false;
-  }
+  const recommendations = resolveRecommendations(picks);
 
-  const recommendations = value.recommendations;
-
-  if (!isRecord(recommendations)) {
-    return false;
-  }
-
-  return ["open_source", "freemium", "premium"].every((key) =>
-    isRecommendation(recommendations[key]),
-  );
-}
-
-function isRecommendation(value: unknown): value is Recommendation {
-  return (
-    isRecord(value) &&
-    typeof value.model_name === "string" &&
-    Boolean(value.model_name.trim()) &&
-    typeof value.platform_url === "string" &&
-    isValidHttpUrl(value.platform_url)
-  );
+  return {
+    optimized_prompt: parsed.optimized_prompt as string,
+    recommendations,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isValidHttpUrl(value: string) {
-  try {
-    const url = new URL(value);
-
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return false;
-    }
-
-    return isConsumerChatUrl(url);
-  } catch {
-    return false;
-  }
-}
-
-function isConsumerChatUrl(url: URL) {
-  const hostname = url.hostname.replace(/^www\./, "");
-  const path = url.pathname.toLowerCase();
-  const href = url.href.toLowerCase();
-
-  if (
-    hostname === "github.com" ||
-    hostname.endsWith(".github.com") ||
-    href.includes("/docs") ||
-    href.includes("/documentation") ||
-    href.includes("/api") ||
-    href.includes("/reference") ||
-    href.includes("/models/") ||
-    href.includes("/papers/")
-  ) {
-    return false;
-  }
-
-  if (hostname === "huggingface.co") {
-    return path === "/chat" || path.startsWith("/chat/");
-  }
-
-  return true;
 }
