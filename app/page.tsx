@@ -338,6 +338,14 @@ export default function Home() {
               id="prompt"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
+              onFocus={() => {
+                // On mobile, wait for keyboard to fully open, then scroll the buttons into view so they 'bump up'
+                if (window.innerWidth < 640) {
+                  setTimeout(() => {
+                    document.getElementById('action-buttons')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 400);
+                }
+              }}
               placeholder="Example: build a subscription dashboard for a solo founder"
               className="mt-5 min-h-[120px] sm:min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
             />
@@ -355,7 +363,7 @@ export default function Home() {
               ) : null}
             </AnimatePresence>
 
-            <div className="fixed bottom-0 left-0 z-[100] flex w-full flex-col gap-3 border-t border-black/[0.05] bg-white/80 p-4 shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.05)] backdrop-blur-2xl sm:static sm:mt-5 sm:flex-row sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none dark:border-white/10 dark:bg-[#1c1c1e]/90">
+            <div id="action-buttons" className="mt-5 flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
                 onClick={requestClarifications}
