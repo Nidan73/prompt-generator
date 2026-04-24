@@ -242,7 +242,9 @@ export function resolveRecommendations(
     const pick = picks[tier];
     const platform = pick?.platform_id ? findPlatform(pick.platform_id) : undefined;
 
-    if (platform && pick.model_name?.trim()) {
+    const isPlatformValidForTier = platform && platform.tiers.includes(tier);
+
+    if (platform && isPlatformValidForTier && pick.model_name?.trim()) {
       result[tier] = {
         model_name: pick.model_name.trim(),
         platform_url: platform.url,

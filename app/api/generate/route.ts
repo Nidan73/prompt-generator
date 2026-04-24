@@ -202,7 +202,8 @@ Tier definitions:
 
 Rules:
 - Rank by task-fit. A specialized model that excels at this task beats a famous all-rounder.
-- You may recommend the same model for multiple tiers if it genuinely is the best.
+- You may recommend the same model for multiple tiers ONLY if the platform supports both tiers.
+- CRITICAL: You can ONLY assign a platform to a tier if that tier is listed in the platform's "tiers" array! (e.g. Do not pick 'groq' for 'premium').
 - ONLY recommend model versions that appear in the landscape above. Older versions are deprecated.
 - ONLY use platform IDs from the list above. Do NOT invent IDs.
 
