@@ -262,24 +262,23 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-hidden transition-colors">
-      
-      {/* Edge-to-edge Marquee Banner */}
-      <div className="relative flex h-[38px] w-full items-center overflow-hidden bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border-b border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
-        <motion.div
-          initial={{ x: "100vw" }}
-          animate={{ x: "-100%" }}
-          transition={{
-            duration: 25,
-            ease: "linear",
-            repeat: Infinity,
-          }}
-          className="absolute whitespace-nowrap flex items-center text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base"
-        >
-          🍉 Muslim Lives Matter. Free Palestine. We stand in solidarity and will never forget Gaza. 🍉
-        </motion.div>
-      </div>
-
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+        
+        {/* Contained Marquee Banner */}
+        <div className="relative mb-8 flex h-[38px] w-full items-center overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
+          <motion.div
+            initial={{ x: "100vw" }}
+            animate={{ x: "-100%" }}
+            transition={{
+              duration: 25,
+              ease: "linear",
+              repeat: Infinity,
+            }}
+            className="absolute whitespace-nowrap flex items-center text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base"
+          >
+            🍉 Muslim Lives Matter. Free Palestine. We stand in solidarity and will never forget Gaza. 🍉
+          </motion.div>
+        </div>
 
         <motion.header
           variants={fadeUp}
