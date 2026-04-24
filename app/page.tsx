@@ -276,7 +276,7 @@ export default function Home() {
             }}
             className="absolute whitespace-nowrap flex items-center text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base"
           >
-            🍉 Muslim Lives Matter. Free Palestine. We stand in solidarity and will never forget Gaza. 🍉
+            🍉 Free Palestine. Every Muslim life matters. We will never forget Gaza and our Muslim brothers and sisters. 🍉
           </motion.div>
         </div>
 
