@@ -36,7 +36,7 @@ export const PLATFORM_REGISTRY: Platform[] = [
   { id: "copilot",     name: "Microsoft Copilot",     url: "https://copilot.microsoft.com", tiers: ["freemium"] },
   { id: "deepseek",    name: "DeepSeek",              url: "https://chat.deepseek.com",     tiers: ["open_source", "freemium"] },
   { id: "gemini",      name: "Google Gemini",         url: "https://gemini.google.com",     tiers: ["freemium", "premium"] },
-  { id: "groq",        name: "Groq",                  url: "https://groq.com",              tiers: ["open_source", "freemium"] },
+  { id: "groq",        name: "Groq",                  url: "https://chat.groq.com",         tiers: ["open_source", "freemium"] },
   { id: "grok",        name: "Grok",                  url: "https://grok.com",              tiers: ["freemium", "premium"] },
   { id: "huggingface", name: "HuggingFace Chat",      url: "https://huggingface.co/chat",   tiers: ["open_source"] },
   { id: "lmsys",       name: "LMSYS Chatbot Arena",   url: "https://chat.lmsys.org",        tiers: ["open_source", "freemium"] },
