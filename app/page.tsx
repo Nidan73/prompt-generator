@@ -360,9 +360,9 @@ export default function Home() {
                 type="button"
                 onClick={requestClarifications}
                 disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
-                className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-5 text-sm font-semibold text-slate-900 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-100 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
+                className="inline-flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-5 text-base font-semibold text-slate-900 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-100 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
               >
-                {isClarifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                {isClarifying ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
                 Guided Mode
               </button>
 
@@ -378,9 +378,9 @@ export default function Home() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -8, scale: 0.98 }}
                     transition={{ duration: 0.22, type: "spring", stiffness: 400, damping: 30 }}
-                    className="inline-flex h-12 flex-[1.35] items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
+                    className="inline-flex h-14 flex-[1.35] items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-base font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
                   >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                     {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
                   </motion.button>
                 ) : null}
