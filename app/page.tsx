@@ -264,20 +264,13 @@ export default function Home() {
     <main className="min-h-screen overflow-hidden transition-colors">
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
         
-        {/* Contained Marquee Banner */}
-        <div className="relative mb-8 flex h-[38px] w-full items-center overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
-          <motion.div
-            initial={{ x: "100vw" }}
-            animate={{ x: "-100%" }}
-            transition={{
-              duration: 25,
-              ease: "linear",
-              repeat: Infinity,
-            }}
-            className="absolute whitespace-nowrap flex items-center text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base"
-          >
-            🍉 Free Palestine. Every Muslim life matters. We will never forget Gaza and our Muslim brothers and sisters. 🍉
-          </motion.div>
+        {/* Contained Static Banner */}
+        <div className="relative mb-8 flex min-h-[38px] w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
+          <div className="flex items-center px-4 py-2 text-center text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base">
+            <span className="mr-2">🍉</span>
+            <span>Free Palestine. Every Muslim life matters. We will never forget Gaza and our Muslim brothers and sisters.</span>
+            <span className="ml-2">🍉</span>
+          </div>
         </div>
 
         <motion.header
