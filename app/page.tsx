@@ -262,7 +262,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-x-hidden transition-colors">
-      <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+      <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 pb-40 sm:px-6 sm:pb-6 lg:px-8">
         
         {/* Contained Static Banner */}
         <div className="relative mb-8 flex min-h-[38px] w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
