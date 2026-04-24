@@ -275,7 +275,7 @@ export default function Home() {
         >
           <div className="flex items-center justify-center px-4 py-3 text-center">
             <p className="text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base">
-              Muslim lives matter and Free Palestine. We will never forget about Gaza and Muslims.
+              Muslim Lives Matter. Free Palestine. We stand in solidarity and will never forget Gaza.
             </p>
           </div>
         </motion.div>
