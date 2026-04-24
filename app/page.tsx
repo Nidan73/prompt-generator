@@ -265,6 +265,21 @@ export default function Home() {
       
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+        
+        <motion.div
+          variants={fadeUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.45, type: "spring", stiffness: 400, damping: 30 }}
+          className="mb-8 w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/30 dark:via-emerald-900/30 dark:to-teal-900/30 dark:border-emerald-500/10"
+        >
+          <div className="flex items-center justify-center px-4 py-3 text-center">
+            <p className="text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base">
+              Muslim lives matter and Free Palestine. We will never forget about Gaza and Muslims.
+            </p>
+          </div>
+        </motion.div>
+
         <motion.header
           variants={fadeUp}
           initial="initial"
