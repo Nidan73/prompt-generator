@@ -264,11 +264,20 @@ export default function Home() {
     <main className="min-h-screen overflow-hidden transition-colors">
       
       {/* Edge-to-edge Marquee Banner */}
-      <div className="w-full overflow-hidden bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border-b border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
-        <div className="py-2.5">
-          <p className="animate-marquee text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300">
+      <div className="w-full bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border-b border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
+        <div className="flex w-full overflow-hidden whitespace-nowrap py-2.5">
+          <motion.div
+            initial={{ x: "100vw" }}
+            animate={{ x: "-100%" }}
+            transition={{
+              duration: 25,
+              ease: "linear",
+              repeat: Infinity,
+            }}
+            className="flex items-center text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base"
+          >
             Muslim Lives Matter. Free Palestine. We stand in solidarity and will never forget Gaza.
-          </p>
+          </motion.div>
         </div>
       </div>
 
