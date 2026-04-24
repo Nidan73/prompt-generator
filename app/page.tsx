@@ -281,7 +281,7 @@ export default function Home() {
           className="flex items-center justify-between"
         >
           <div className="inline-flex h-10 items-center gap-2 rounded-full border border-black/[0.05] bg-white/80 px-4 text-sm font-semibold shadow-sm shadow-slate-200/60 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/20">
-            <span className="text-base leading-none">🍉</span>
+            <span className="text-base leading-none">🤖</span>
             AI Prompt Generator
           </div>
           <ThemeToggle />
@@ -323,7 +323,7 @@ export default function Home() {
                   Intent
                 </label>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                  Start deliberately vague.
+                  Feeling Lazy , Write your Vauge Prompt Here 
                 </h2>
               </div>
               {isCoolingDown ? (
