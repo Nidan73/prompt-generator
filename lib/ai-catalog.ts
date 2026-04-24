@@ -39,7 +39,7 @@ export const PLATFORM_REGISTRY: Platform[] = [
   { id: "groq",        name: "Groq",                  url: "https://chat.groq.com",         tiers: ["open_source", "freemium"] },
   { id: "grok",        name: "Grok",                  url: "https://grok.com",              tiers: ["freemium", "premium"] },
   { id: "huggingface", name: "HuggingFace Chat",      url: "https://huggingface.co/chat",   tiers: ["open_source"] },
-  { id: "lmsys",       name: "LMSYS Chatbot Arena",   url: "https://chat.lmsys.org",        tiers: ["open_source", "freemium"] },
+  { id: "lmsys",       name: "LMSYS Chatbot Arena",   url: "https://lmarena.ai",            tiers: ["open_source", "freemium"] },
   { id: "mistral",     name: "Mistral Le Chat",       url: "https://chat.mistral.ai",       tiers: ["open_source", "freemium"] },
   { id: "perplexity",  name: "Perplexity",            url: "https://perplexity.ai",         tiers: ["freemium", "premium"] },
   { id: "poe",         name: "Poe",                   url: "https://poe.com",               tiers: ["freemium"] },
