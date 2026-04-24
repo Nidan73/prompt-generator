@@ -69,6 +69,10 @@ The frontend reads `retryAfter` from 429 responses and shows a live cooldown tim
 - **Anti-Fragile Parsing**: Handles imperfect LLM JSON, strips markdown artifacts, resolves invalid picks
 - **Groq Free-Tier Fallbacks**: Automatic retry across multiple models on rate limits
 - **Redis Abuse Protection**: Sliding-window rate limiting on all API routes
+- **Vercel Edge Runtime**: API routes run on the Edge for zero cold-start latency worldwide
+- **Native Analytics**: Built-in Vercel Web Analytics for zero-config traffic tracking
+- **Mobile-Optimized UI**: Premium mobile layout with smart auto-scrolling for virtual keyboards
+- **Watermelon Theme**: Unique aesthetic with dynamic 🍉 favicon and integrated solidarity banner
 - **Error Boundary**: Runtime crashes show a recovery UI instead of a white screen
 - **Dark Mode**: Local theme provider with animated Sun/Moon toggle
 - **Copy & Open**: One-click copies the prompt and opens the recommended platform
