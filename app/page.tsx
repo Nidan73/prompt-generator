@@ -268,7 +268,7 @@ export default function Home() {
         <div className="relative mb-8 flex min-h-[38px] w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600/10 via-emerald-500/10 to-teal-600/10 border border-emerald-500/20 shadow-sm backdrop-blur-md dark:from-emerald-950/40 dark:via-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-500/10">
           <div className="flex items-center px-4 py-2 text-center text-sm font-medium tracking-wide text-emerald-800 dark:text-emerald-300 sm:text-base">
             <span className="mr-2">🍉</span>
-            <span>Free Palestine. Every Muslim life matters. We will never forget Gaza and our Muslim brothers and sisters.</span>
+            <span>Unforgotten. Unbroken. Free Palestine. Every Life is a Story Worth Telling.</span>
             <span className="ml-2">🍉</span>
           </div>
         </div>
@@ -281,7 +281,7 @@ export default function Home() {
           className="flex items-center justify-between"
         >
           <div className="inline-flex h-10 items-center gap-2 rounded-full border border-black/[0.05] bg-white/80 px-4 text-sm font-semibold shadow-sm shadow-slate-200/60 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/20">
-            <Sparkles className="h-4 w-4 text-blue-500" />
+            <span className="text-base leading-none">🍉</span>
             AI Prompt Generator
           </div>
           <ThemeToggle />

@@ -13,6 +13,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "AI Prompt Generator",
   description: "Generate stronger prompts and route them to the right AI platforms.",
+  icons: {
+    icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍉</text></svg>",
+  },
 };
 
 const themeInitScript = `
