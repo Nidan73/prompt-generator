@@ -355,7 +355,7 @@ export default function Home() {
               ) : null}
             </AnimatePresence>
 
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <div className="fixed bottom-0 left-0 z-[100] flex w-full flex-col gap-3 border-t border-black/[0.05] bg-white/80 p-4 shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.05)] backdrop-blur-2xl sm:static sm:mt-5 sm:flex-row sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none dark:border-white/10 dark:bg-[#1c1c1e]/90">
               <button
                 type="button"
                 onClick={requestClarifications}
