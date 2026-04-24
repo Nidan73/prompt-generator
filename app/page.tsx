@@ -261,7 +261,7 @@ export default function Home() {
   const activeRecommendation = result?.recommendations[activeTab];
 
   return (
-    <main className="min-h-screen overflow-hidden transition-colors">
+    <main className="min-h-screen overflow-x-hidden transition-colors">
       <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
         
         {/* Contained Static Banner */}
@@ -312,7 +312,7 @@ export default function Home() {
             initial="initial"
             animate="animate"
             transition={{ delay: 0.12, duration: 0.5, type: "spring", stiffness: 400, damping: 30 }}
-            className="mx-auto mt-10 w-full max-w-4xl rounded-[2rem] border border-black/[0.05] bg-white/70 p-6 shadow-xl shadow-black/[0.03] backdrop-blur-2xl sm:p-10 dark:border-white/[0.08] dark:bg-black/50 dark:shadow-black/50"
+            className="mx-auto mt-10 mb-20 sm:mb-0 w-full max-w-4xl rounded-[2rem] border border-black/[0.05] bg-white/70 p-6 shadow-xl shadow-black/[0.03] backdrop-blur-2xl sm:p-10 dark:border-white/[0.08] dark:bg-black/50 dark:shadow-black/50"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -322,8 +322,8 @@ export default function Home() {
                 >
                   Intent
                 </label>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                  Feeling Lazy , write your vague Prompt Here 
+                <h2 className="mt-2 text-xl sm:text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                  Feeling lazy? Write your vague prompt here
                 </h2>
               </div>
               {isCoolingDown ? (
@@ -339,7 +339,7 @@ export default function Home() {
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="Example: build a subscription dashboard for a solo founder"
-              className="mt-5 min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
+              className="mt-5 min-h-[120px] sm:min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
             />
             <AnimatePresence>
               {hasPrompt && !hasEnoughContext ? (
