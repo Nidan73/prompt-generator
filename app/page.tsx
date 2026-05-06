@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Globe,
   History,
+  Info,
   Link2,
   Loader2,
   LockKeyhole,
@@ -634,6 +635,12 @@ export default function Home() {
             transition={{ delay: 0.05, duration: 0.5, type: "spring", stiffness: 400, damping: 30 }}
             className="mx-auto max-w-3xl text-center"
           >
+            <div className="mb-6 flex items-center justify-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
+                <Info className="h-3.5 w-3.5" />
+                Prompt Generator, Not a Chatbot
+              </span>
+            </div>
             <p className="text-sm font-medium uppercase tracking-[0.28em] text-blue-600 dark:text-blue-400">
               Prompt engine
             </p>
