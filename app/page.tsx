@@ -691,7 +691,7 @@ export default function Home() {
                   }, 400);
                 }
               }}
-              placeholder="Example: build a subscription dashboard for a solo founder"
+              placeholder="Example: Build a chrome extension that will help me to track my time"
               className="mt-5 min-h-[120px] sm:min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
             />
             <AnimatePresence>
