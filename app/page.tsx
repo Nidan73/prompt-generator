@@ -88,6 +88,7 @@ export default function Home() {
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [result, setResult] = useState<DispatcherResponse | null>(null);
   const [activeTab, setActiveTab] = useState<RecommendationTier>("open_source");
+  const [isGuidedModeEnabled, setIsGuidedModeEnabled] = useState(false);
   const [isClarifying, setIsClarifying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [cooldownTimer, setCooldownTimer] = useState(0);
@@ -363,40 +364,66 @@ export default function Home() {
               ) : null}
             </AnimatePresence>
 
-            <div id="action-buttons" className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                onClick={requestClarifications}
-                disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
-                className="inline-flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-5 text-base font-semibold text-slate-900 transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-100 dark:hover:border-blue-700 dark:hover:bg-blue-950/30"
-              >
-                {isClarifying ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
-                Guided Mode
-              </button>
+            {!isGuided && (
+              <div className="mt-5 flex items-center justify-between rounded-xl bg-black/[0.04] p-1.5 dark:bg-white/[0.04]">
+                <button
+                  type="button"
+                  onClick={() => setIsGuidedModeEnabled(false)}
+                  className={cn(
+                    "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-all duration-200",
+                    !isGuidedModeEnabled
+                      ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
+                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  )}
+                >
+                  Fast Generation
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsGuidedModeEnabled(true)}
+                  className={cn(
+                    "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-all duration-200",
+                    isGuidedModeEnabled
+                      ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
+                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  )}
+                >
+                  Guided Mode
+                </button>
+              </div>
+            )}
 
-              {!isGuided && (
+            <div id="action-buttons" className="mt-4 flex flex-col gap-3 sm:flex-row">
+              {isGuidedModeEnabled && !isGuided ? (
+                <button
+                  type="button"
+                  onClick={requestClarifications}
+                  disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
+                  className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-base font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:bg-blue-500 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:shadow-blue-900/20"
+                >
+                  {isClarifying ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
+                  {isCoolingDown ? `Wait ${cooldownTimer}s` : "Start Guided Mode"}
+                </button>
+              ) : (
                 <AnimatePresence mode="wait">
-                {showGenerateButton ? (
-                  <motion.button
-                    key="generate"
-                    type="button"
-                    onClick={generatePrompt}
-                    disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
-                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                    transition={{ duration: 0.22, type: "spring", stiffness: 400, damping: 30 }}
-                    className="inline-flex h-14 flex-[1.35] items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-base font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
-                  >
-                    {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
-                    {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
-                  </motion.button>
-                ) : null}
-              </AnimatePresence>
+                  {showGenerateButton ? (
+                    <motion.button
+                      key="generate"
+                      type="button"
+                      onClick={generatePrompt}
+                      disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                      transition={{ duration: 0.22, type: "spring", stiffness: 400, damping: 30 }}
+                      className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-base font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
+                    >
+                      {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                      {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
+                    </motion.button>
+                  ) : null}
+                </AnimatePresence>
               )}
-  
-
-              
             </div>
 
             <AnimatePresence>

@@ -171,6 +171,9 @@ Constraints
 1. STRICT_RULE_1
 2. STRICT_RULE_2
 3. STRICT_RULE_3
+4. Ask me any clarifying questions if you need more context to understand my intent better.
+
+- Always append the above exact sentence (about asking clarifying questions) as the final constraint.
 
 PART 2 — MODEL ROUTING (Ranking-Based)
 You must recommend the best AI model for this specific task across three tiers.
