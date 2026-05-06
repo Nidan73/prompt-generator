@@ -90,7 +90,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
+      <body className={`${inter.variable} antialiased`} suppressHydrationWarning>
         <Script
           id="schema-org"
           type="application/ld+json"
@@ -115,8 +115,6 @@ export default function RootLayout({
             })
           }}
         />
-      </head>
-      <body className={`${inter.variable} antialiased`} suppressHydrationWarning>
         <Script
           id="theme-init"
           strategy="beforeInteractive"
