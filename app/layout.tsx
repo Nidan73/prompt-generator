@@ -11,11 +11,43 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AI Prompt Generator",
-  description: "Generate stronger prompts and route them to the right AI platforms.",
+  title: {
+    default: "Bhai Thik Kor | Expert AI Prompt Generator",
+    template: "%s | Bhai Thik Kor",
+  },
+  description:
+    "Stop writing generic AI prompts. Bhai Thik Kor transforms your rough ideas into highly specialized, expert-grade execution prompts and routes them to the best AI models.",
+  keywords: [
+    "AI prompt generator",
+    "prompt engineering",
+    "prompt optimizer",
+    "ChatGPT prompts",
+    "Claude prompts",
+    "AI model router",
+    "Bhai thik kor",
+  ],
+  authors: [{ name: "Nidan" }],
+  creator: "Nidan",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://bhaithikkor.com",
+    title: "Bhai Thik Kor | Expert AI Prompt Generator",
+    description:
+      "Transform your rough ideas into expert-grade execution prompts and route them to the best AI models instantly.",
+    siteName: "Bhai Thik Kor",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Bhai Thik Kor | Expert AI Prompt Generator",
+    description:
+      "Transform your rough ideas into expert-grade execution prompts and route them to the best AI models instantly.",
+    creator: "@nidan",
+  },
   icons: {
     icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍉</text></svg>",
   },
+  metadataBase: new URL("https://bhaithikkor.com"),
 };
 
 const themeInitScript = `
