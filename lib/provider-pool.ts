@@ -14,13 +14,13 @@
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │  LIVE FREE-TIER CAPACITY (verified from API keys 2026-05-07)       │
  * │                                                                    │
- * │  Gemini:      1500 RPD × 6 models  = ~9000 requests/day           │
+ * │  Gemini:      1500 RPD × 8 models  = ~12000 requests/day          │
  * │  Groq:        100k TPD × 5 models  = ~500k tokens/day             │
  * │  OpenRouter:  ~200 RPD × 5 models  = ~1000 requests/day           │
  * │                                                                    │
- * │  GENERATE pool: 14 models → each model gets ~7% of traffic        │
- * │  CLARIFY pool:  10 models → each model gets ~10% of traffic       │
- * │  REFINE pool:   10 models → each model gets ~10% of traffic       │
+ * │  GENERATE pool: 16 models → each model gets ~6% of traffic        │
+ * │  CLARIFY pool:  11 models → each model gets ~9% of traffic        │
+ * │  REFINE pool:   12 models → each model gets ~8% of traffic        │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -43,6 +43,18 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export const GENERATE_POOL: ProviderConfig[] = [
   // ── Gemini (1500 RPD each, per-model independent limits) ──
+  {
+    name: "Gemini 3.1 Pro",
+    url: GEMINI_URL,
+    model: "gemini-3.1-pro-preview",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
+    name: "Gemini 2.5 Pro",
+    url: GEMINI_URL,
+    model: "gemini-2.5-pro",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
   {
     name: "Gemini 2.5 Flash",
     url: GEMINI_URL,
@@ -135,7 +147,13 @@ export const GENERATE_POOL: ProviderConfig[] = [
 // Prioritizes fast response times. Smaller/lite models preferred.
 
 export const CLARIFY_POOL: ProviderConfig[] = [
-  // ── Gemini Lite & Flash (ultra-fast, 1500 RPD each) ──
+  // ── Gemini (ultra-fast, 1500 RPD each) ──
+  {
+    name: "Gemini 3.1 Pro",
+    url: GEMINI_URL,
+    model: "gemini-3.1-pro-preview",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
   {
     name: "Gemini 2.0 Flash Lite",
     url: GEMINI_URL,
@@ -205,6 +223,18 @@ export const CLARIFY_POOL: ProviderConfig[] = [
 
 export const REFINE_POOL: ProviderConfig[] = [
   // ── Gemini (best instruction-following, 1500 RPD each) ──
+  {
+    name: "Gemini 3.1 Pro",
+    url: GEMINI_URL,
+    model: "gemini-3.1-pro-preview",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
+    name: "Gemini 2.5 Pro",
+    url: GEMINI_URL,
+    model: "gemini-2.5-pro",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
   {
     name: "Gemini 2.5 Flash",
     url: GEMINI_URL,
