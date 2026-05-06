@@ -1,5 +1,7 @@
 # Bhai Thik Kor (Production Architecture)
 
+Live : https://bhai-thik-kor.vercel.app/`
+
 **Turn a vague idea into an expert-grade AI prompt — and know exactly where to run it.**
 
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs)
