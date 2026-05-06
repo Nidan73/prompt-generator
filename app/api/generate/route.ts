@@ -27,6 +27,12 @@ type ProviderConfig = {
 
 const PROVIDER_CHAIN: ProviderConfig[] = [
   {
+    name: "Gemini",
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    model: "gemini-2.5-flash",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
     name: "Groq",
     url: "https://api.groq.com/openai/v1/chat/completions",
     model: "llama-3.3-70b-versatile",
@@ -37,12 +43,6 @@ const PROVIDER_CHAIN: ProviderConfig[] = [
     url: "https://api.groq.com/openai/v1/chat/completions",
     model: "llama-3.1-8b-instant",
     apiKey: process.env.GROQ_API_KEY,
-  },
-  {
-    name: "Gemini",
-    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    model: "gemini-2.5-flash",
-    apiKey: process.env.GEMINI_API_KEY,
   },
   {
     name: "OpenRouter",
