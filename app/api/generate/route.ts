@@ -4,6 +4,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { buildRegistryBlock, resolveRecommendations, getLiveModelLandscape } from "@/lib/ai-catalog";
 import { GenerateRequestSchema, parseRequestBody } from "@/lib/api-schemas";
+import { type ProviderConfig, GENERATE_POOL, getRotatedChain } from "@/lib/provider-pool";
 
 export const runtime = "edge";
 
@@ -15,42 +16,6 @@ type DispatcherResponse = {
     premium: { model_name: string; platform_url: string; reasoning: string };
   };
 };
-
-// Multi-provider fallback chain. System tries these in order.
-// If a key is missing or a 429/500 occurs, it automatically falls back to the next provider.
-type ProviderConfig = {
-  name: string;
-  url: string;
-  model: string;
-  apiKey: string | undefined;
-};
-
-const PROVIDER_CHAIN: ProviderConfig[] = [
-  {
-    name: "Gemini",
-    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    model: "gemini-2.5-flash",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Groq",
-    url: "https://api.groq.com/openai/v1/chat/completions",
-    model: "llama-3.3-70b-versatile",
-    apiKey: process.env.GROQ_API_KEY,
-  },
-  {
-    name: "Groq (Fallback)",
-    url: "https://api.groq.com/openai/v1/chat/completions",
-    model: "llama-3.1-8b-instant",
-    apiKey: process.env.GROQ_API_KEY,
-  },
-  {
-    name: "OpenRouter",
-    url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "google/gemini-2.5-flash:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  }
-];
 
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
@@ -126,7 +91,8 @@ async function createDispatcherCompletion(userPrompt: string, clarifications: Ar
   const systemPrompt = buildSystemPrompt(userPrompt, selectedOptions, liveLandscape);
   const userContent = "Return the strict JSON response now.";
 
-  return await callLLMWithFallback(systemPrompt, userContent, PROVIDER_CHAIN);
+  const chain = getRotatedChain("generate", GENERATE_POOL);
+  return await callLLMWithFallback(systemPrompt, userContent, chain);
 }
 
 function buildSystemPrompt(userPrompt: string, selectedOptions: string, liveLandscape: string) {

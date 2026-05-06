@@ -3,37 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
+import { type ProviderConfig, REFINE_POOL, getRotatedChain } from "@/lib/provider-pool";
 
 export const runtime = "edge";
-
-// Multi-provider fallback chain for lightweight prompt refinement.
-type ProviderConfig = {
-  name: string;
-  url: string;
-  model: string;
-  apiKey: string | undefined;
-};
-
-const PROVIDER_CHAIN: ProviderConfig[] = [
-  {
-    name: "Groq",
-    url: "https://api.groq.com/openai/v1/chat/completions",
-    model: "llama-3.3-70b-versatile",
-    apiKey: process.env.GROQ_API_KEY,
-  },
-  {
-    name: "Gemini",
-    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    model: "gemini-2.5-flash",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "OpenRouter",
-    url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "google/gemini-2.5-flash:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-];
 
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
@@ -84,7 +56,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const userContent = `EXISTING PROMPT:\n${currentPrompt.slice(0, 6000)}\n\nMODIFICATION REQUESTED:\n${instruction.slice(0, 500)}`;
-    const refined = await callLLMWithFallback(SYSTEM_PROMPT, userContent, PROVIDER_CHAIN);
+    const refined = await callLLMWithFallback(SYSTEM_PROMPT, userContent, getRotatedChain("refine", REFINE_POOL));
 
     // Strip any accidental markdown wrapping
     const cleanRefined = refined

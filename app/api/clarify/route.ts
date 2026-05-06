@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { ClarifyRequestSchema, parseRequestBody } from "@/lib/api-schemas";
+import { type ProviderConfig, CLARIFY_POOL, getRotatedChain } from "@/lib/provider-pool";
 
 export const runtime = "edge";
 
@@ -11,35 +12,6 @@ export type ClarifyingQuestion = {
   question: string;
   options: string[];
 };
-
-// Multi-provider fallback chain for high-speed clarifying questions.
-type ProviderConfig = {
-  name: string;
-  url: string;
-  model: string;
-  apiKey: string | undefined;
-};
-
-const PROVIDER_CHAIN: ProviderConfig[] = [
-  {
-    name: "Gemini",
-    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    model: "gemini-2.5-flash",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Groq",
-    url: "https://api.groq.com/openai/v1/chat/completions",
-    model: "llama-3.1-8b-instant",
-    apiKey: process.env.GROQ_API_KEY,
-  },
-  {
-    name: "OpenRouter",
-    url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "meta-llama/llama-3.1-8b-instruct:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  }
-];
 
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
@@ -138,7 +110,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const userContent = `Create guided-mode clarification questions for this rough prompt:\n${userPrompt}`;
-    let content = await callLLMWithFallback(SYSTEM_PROMPT, userContent, PROVIDER_CHAIN);
+    let content = await callLLMWithFallback(SYSTEM_PROMPT, userContent, getRotatedChain("clarify", CLARIFY_POOL));
 
     // Aggressive regex to strip any markdown hallucinations before parsing
     content = content
