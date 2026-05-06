@@ -1,4 +1,4 @@
-# AI Prompt Dispatcher (Production Architecture)
+# Bhai Thik Kor (Production Architecture)
 
 **Turn a vague idea into an expert-grade AI prompt — and know exactly where to run it.**
 
