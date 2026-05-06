@@ -87,6 +87,32 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <Script
+          id="schema-org"
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebApplication",
+              "name": "Bhai Thik Kor",
+              "url": "https://bhaithikkor.vercel.app",
+              "applicationCategory": "UtilityApplication",
+              "operatingSystem": "All",
+              "description": "Expert AI Prompt Generator that transforms vague ideas into highly structured, expert-grade execution prompts and routes them to the best AI models.",
+              "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD"
+              },
+              "creator": {
+                "@type": "Person",
+                "name": "Nidan"
+              }
+            })
+          }}
+        />
+      </head>
       <body className={`${inter.variable} antialiased`} suppressHydrationWarning>
         <Script
           id="theme-init"
