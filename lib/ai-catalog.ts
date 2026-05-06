@@ -43,9 +43,6 @@ export const PLATFORM_REGISTRY: Platform[] = [
   { id: "mistral",     name: "Mistral Le Chat",       url: "https://chat.mistral.ai",       tiers: ["open_source", "freemium"] },
   { id: "perplexity",  name: "Perplexity",            url: "https://perplexity.ai",         tiers: ["freemium", "premium"] },
   { id: "poe",         name: "Poe",                   url: "https://poe.com",               tiers: ["freemium"] },
-  { id: "midjourney",  name: "Midjourney",            url: "https://midjourney.com",        tiers: ["premium"] },
-  { id: "dalle",       name: "DALL-E 3",              url: "https://chatgpt.com",           tiers: ["premium"] },
-  { id: "stablediffusion", name: "Stable Diffusion",  url: "https://stability.ai",          tiers: ["open_source", "freemium"] },
 ];
 
 // ─── Provider → Platform Mapping ───────────────────────────────────────────────
@@ -95,11 +92,7 @@ const STATIC_FALLBACK_LANDSCAPE = `CURRENT MODEL LANDSCAPE:
 - Mistral: Mistral Small 4, Mistral Small Creative, Devstral 2 → use platform [mistral]
 - Qwen: Qwen3.6 Plus, Qwen3.5-9B → use platform [huggingface]
 
-IMAGE GENERATION MODELS:
-- Midjourney: Midjourney v6.1 → use platform [midjourney]
-- OpenAI: DALL-E 3 → use platform [dalle]
-- Stability AI: Stable Diffusion 3, SDXL → use platform [stablediffusion]
-
+NOTE: Many of the platforms above (ChatGPT, Gemini, Grok) have built-in image generation. For image tasks, route to those same platforms — not to standalone image tools.
 IMPORTANT: Do NOT recommend older versions when newer ones exist above.`;
 
 // ─── Live Model Landscape ──────────────────────────────────────────────────────
@@ -174,11 +167,7 @@ export async function getLiveModelLandscape(): Promise<string> {
       }
     }
 
-    landscape += `\nIMAGE GENERATION MODELS:
-- Midjourney: Midjourney v6.1 → use platform [midjourney]
-- OpenAI: DALL-E 3 → use platform [dalle]
-- Stability AI: Stable Diffusion 3, SDXL → use platform [stablediffusion]
-
+    landscape += `\nNOTE: Many platforms above (ChatGPT, Gemini, Grok) have built-in image generation. For image tasks, route to those same platforms — not to standalone image tools.
 IMPORTANT: The list above shows the latest released models. Do NOT recommend older versions. Use the platform ID in brackets [like_this] for your routing picks.`;
 
     return landscape;

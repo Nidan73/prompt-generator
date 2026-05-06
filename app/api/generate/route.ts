@@ -148,9 +148,13 @@ function buildSystemPrompt(userPrompt: string, selectedOptions: string, liveLand
 Your job has two parts.
 
 PART 1 — MASTER PROMPT
-Determine if the user is asking for a TEXT/LOGIC prompt or an IMAGE GENERATION prompt (e.g., Midjourney, DALL-E, Stable Diffusion).
+First, determine the task type: is this a TEXT/LOGIC task or an IMAGE GENERATION task?
 
+Signals of an image task: the user mentions "image", "picture", "photo", "illustration", "poster", "logo", "wallpaper", "generate an image", "draw", "design", "visual", "render", "graphic", or similar visual creation words.
+
+═══════════════════════════════════════
 IF TEXT/LOGIC PROMPT:
+═══════════════════════════════════════
 Expand the user's rough input into a structured, expert-grade prompt using the RTCFC framework.
 Rules:
 - You are writing the final prompt the user will copy/paste. Act as the user.
@@ -177,19 +181,41 @@ Constraints
 
 - Always append the above exact sentence (about asking clarifying questions) as the final constraint.
 
+═══════════════════════════════════════
 IF IMAGE GENERATION PROMPT:
-Abandon the RTCFC framework. Instead, generate a highly detailed, comma-separated visual prompt optimized for Midjourney v6 / DALL-E 3.
-Rules:
-- Output a single, dense paragraph. No section headers.
-- Follow this structure: [Subject description], [Action/Pose], [Setting/Background], [Lighting], [Medium/Art Style], [Camera Angle/Lens], [Color Palette], [Parameters/Stylization].
-- Example: "A cyberpunk samurai standing in a neon-lit alleyway, raining, holding a glowing katana, cinematic lighting, dramatic shadows, 8k resolution, unreal engine 5 render, highly detailed, vivid magenta and cyan color palette, low angle shot --ar 16:9"
-- Do NOT include text instructions or meta-commentary, just the pure visual prompt.
+═══════════════════════════════════════
+Your goal is to transform the user's vague visual idea into an EXTREMELY detailed, rich image prompt. The user will paste this prompt directly into an AI image generator (Gemini, ChatGPT, Grok, etc.). A lazy, short prompt is a FAILURE.
+
+You MUST cover ALL of the following 12 dimensions. Invent specific details that elevate the image:
+
+1. SUBJECT — What is the main subject? Describe it with extreme specificity (species, age, clothing fabric, material, texture, expression, posture).
+2. ACTION/POSE — What is the subject doing? Static pose, mid-motion, interaction with environment?
+3. SETTING/ENVIRONMENT — Where is this? Interior/exterior? Time period? Weather? Describe the ground, walls, sky, surrounding objects.
+4. LIGHTING — What kind of light? Golden hour, neon glow, rim lighting, volumetric fog, studio three-point, bioluminescent? Specify direction and intensity.
+5. COLOR PALETTE — Name 3-5 specific colors or a palette mood (e.g., "muted earth tones with pops of burnt sienna and teal").
+6. ART STYLE/MEDIUM — Photorealistic? Oil painting? Watercolor? Anime cel-shaded? Cyberpunk concept art? 3D render? Specify the medium clearly.
+7. CAMERA/COMPOSITION — Wide shot, close-up, overhead, Dutch angle, shallow depth of field, 85mm portrait lens, rule of thirds?
+8. MOOD/ATMOSPHERE — Serene, ominous, whimsical, melancholic, epic, intimate? What emotion should a viewer feel?
+9. TEXTURE/DETAIL LEVEL — Hyper-detailed skin pores? Smooth vector? Rough brush strokes? Grain? Specify the surface quality.
+10. REFERENCE ARTISTS/AESTHETICS — "In the style of Studio Ghibli", "reminiscent of Greg Rutkowski", "Wes Anderson color grading", etc. Pick 1-2 relevant references.
+11. TECHNICAL QUALITY — 8K, ultra HD, ray tracing, octane render, photographic quality, etc.
+12. NEGATIVE SPACE / WHAT TO AVOID — "No text", "no watermarks", "avoid cluttered backgrounds", etc.
+
+Output format:
+- Write it as ONE continuous, richly detailed paragraph. No headers, no bullet points, no numbering.
+- Separate visual descriptors with commas.
+- End with technical quality tags and negative instructions.
+- The prompt MUST be at least 80 words. Anything shorter is unacceptable.
+
+Example of EXCELLENT output:
+"A weathered elderly Japanese fisherman mending a traditional fishing net on a wooden dock at dawn, surrounded by calm harbor water reflecting soft pink and gold sky, fishing boats anchored in the background with mist rolling off distant mountains, warm golden hour light casting long shadows with gentle rim lighting on his hands, muted palette of slate blue, warm amber, faded indigo, and soft cream, photorealistic digital painting inspired by the atmospheric realism of Gregory Crewdson and the warmth of Hayao Miyazaki's environmental storytelling, shot from a low three-quarter angle with shallow depth of field focusing on the fisherman's weathered hands, serene and contemplative mood evoking quiet dignity and routine, hyper-detailed textures on the rope fibers and wood grain, 8K resolution, cinematic composition, no text, no watermarks, no modern objects"
 
 PART 2 — MODEL ROUTING (Ranking-Based)
 You must recommend the best AI model for this specific task across three tiers.
+For image generation tasks, prioritize platforms with BUILT-IN image generation (ChatGPT with DALL-E, Gemini with Imagen, Grok with Aurora). Do NOT route to standalone image tools.
 
 Step 1 — Task analysis.
-Identify what this task demands: long-context understanding, code generation, creative writing, mathematical reasoning, factual research, image understanding, instruction-following, speed, etc.
+Identify what this task demands: long-context understanding, code generation, creative writing, mathematical reasoning, factual research, image generation, image understanding, instruction-following, speed, etc.
 
 Step 2 — Model ranking.
 Use the model landscape reference below to know which models currently exist. Then determine which of those current models is best for each cognitive demand.
