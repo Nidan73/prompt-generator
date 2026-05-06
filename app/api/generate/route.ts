@@ -33,6 +33,12 @@ const PROVIDER_CHAIN: ProviderConfig[] = [
     apiKey: process.env.GROQ_API_KEY,
   },
   {
+    name: "Groq (Fallback)",
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    model: "llama-3.1-8b-instant",
+    apiKey: process.env.GROQ_API_KEY,
+  },
+  {
     name: "Gemini",
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
     model: "gemini-2.5-flash",
