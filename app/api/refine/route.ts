@@ -42,11 +42,18 @@ const ratelimit = new Ratelimit({
   prefix: "@prompt-generator/refine",
 });
 
-const SYSTEM_PROMPT = `You are an expert prompt editor. The user has an existing AI prompt structured with the RTCFC framework (Role, Task, Context, Format, Constraints). They want a specific modification applied.
+const SYSTEM_PROMPT = `You are an expert prompt editor. The user has an existing AI prompt and they want a specific modification applied to it.
+
+CRITICAL INSTRUCTION: ADAPTIVE FRAMEWORK PRESERVATION
+You must analyze the structural format of the user's existing prompt and STRICTLY preserve it. 
+- If it uses XML tags (e.g. <context>, <task>), KEEP the XML tags.
+- If it is a comma-separated list of visual tags (e.g. for Image/Video generation), KEEP it as a continuous comma-separated paragraph.
+- If it uses the RTCFC framework (Role, Task, Context, Format, Constraints headers), KEEP those exact headers.
+- If it uses AIDA or PAS headers, KEEP those exact headers.
 
 Rules:
 - Apply the user's modification precisely. Do NOT rewrite sections they didn't ask to change.
-- Preserve the RTCFC section headers (Role, Task, Context, Format, Constraints).
+- Preserve the exact structural framework and layout of the original prompt.
 - Return ONLY the modified prompt text. No JSON. No markdown code blocks. No commentary.
 - If the modification is unclear, make your best interpretation and apply it.`;
 
