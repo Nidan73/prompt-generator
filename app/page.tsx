@@ -4,21 +4,31 @@ import type { ComponentType } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/components/theme-provider";
+import { saveToHistory, getHistory, clearHistory, type HistoryEntry } from "@/lib/prompt-history";
+import { encodePromptToHash, decodePromptFromHash } from "@/lib/share-link";
 import clsx from "clsx";
 import { twMerge } from "tailwind-merge";
 import {
   AlertCircle,
   Check,
   Clipboard,
+  Code2,
   ExternalLink,
+  Globe,
+  History,
+  Link2,
   Loader2,
   LockKeyhole,
+  MessageSquare,
   Moon,
   RefreshCw,
   Search,
+  Send,
   Sparkles,
   Sun,
+  Trash2,
   Wand2,
+  X,
 } from "lucide-react";
 
 type ClarifyingQuestion = {
@@ -96,6 +106,25 @@ export default function Home() {
   const [copied, setCopied] = useState("");
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Feature: History
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  // Feature: Developer Mode
+  const [outputMode, setOutputMode] = useState<"chat" | "api">("chat");
+
+  // Feature: Tweak It
+  const [refineInput, setRefineInput] = useState("");
+  const [isRefining, setIsRefining] = useState(false);
+
+  // Feature: Shared Prompt (read-only view from URL hash)
+  const [sharedPrompt, setSharedPrompt] = useState<string | null>(null);
+
+  // Feature: URL Context Injection
+  const [detectedUrl, setDetectedUrl] = useState<string | null>(null);
+  const [extractedContext, setExtractedContext] = useState<string | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
+
   const trimmedPrompt = prompt.trim();
   const wordCount = trimmedPrompt ? trimmedPrompt.split(/\s+/).length : 0;
   const hasPrompt = trimmedPrompt.length > 0;
@@ -128,6 +157,28 @@ export default function Home() {
 
     return () => window.clearInterval(interval);
   }, [isCoolingDown]);
+
+  // Load history on mount
+  useEffect(() => {
+    setHistory(getHistory());
+  }, []);
+
+  // Decode shared prompt from URL hash on mount
+  useEffect(() => {
+    const hash = window.location.hash;
+    const decoded = decodePromptFromHash(hash);
+    if (decoded) {
+      setSharedPrompt(decoded);
+      // Clean the hash from the URL without reload
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
+  // Detect URLs in prompt input
+  useEffect(() => {
+    const urlMatch = trimmedPrompt.match(/https?:\/\/[^\s]+/);
+    setDetectedUrl(urlMatch ? urlMatch[0] : null);
+  }, [trimmedPrompt]);
 
   async function requestClarifications() {
     if (!hasEnoughContext || isCoolingDown) {
@@ -170,14 +221,43 @@ export default function Home() {
     setIsLoading(true);
     setError("");
     setCopied("");
+    setOutputMode("chat");
+    setRefineInput("");
 
     try {
+      // URL Context Injection: extract page content if a URL is detected
+      let urlContext = extractedContext;
+      if (detectedUrl && !urlContext) {
+        try {
+          setIsExtracting(true);
+          const extractRes = await fetch("/api/extract", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: detectedUrl }),
+          });
+          if (extractRes.ok) {
+            const extractData = await extractRes.json();
+            urlContext = `[Extracted from ${extractData.title || detectedUrl}]: ${extractData.content}`;
+            setExtractedContext(urlContext);
+          }
+        } catch {
+          // URL extraction failed silently — continue without it
+        } finally {
+          setIsExtracting(false);
+        }
+      }
+
+      // Build clarifications payload with optional URL context
+      const enrichedClarifications = urlContext
+        ? [...clarifications, { question: "URL Context (auto-extracted)", answer: urlContext }]
+        : clarifications;
+
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: trimmedPrompt,
-          clarifications,
+          clarifications: enrichedClarifications,
         }),
       });
 
@@ -188,14 +268,67 @@ export default function Home() {
         return;
       }
 
-      setResult(payload as DispatcherResponse);
+      const generatedResult = payload as DispatcherResponse;
+      setResult(generatedResult);
       setActiveTab("open_source");
+
+      // Save to local history
+      saveToHistory({
+        inputPrompt: trimmedPrompt,
+        optimizedPrompt: generatedResult.optimized_prompt,
+        recommendations: generatedResult.recommendations,
+      });
+      setHistory(getHistory());
     } catch {
       setError("Generation failed. Give it another run in a moment.");
     } finally {
       setIsLoading(false);
     }
   }
+
+  async function refinePrompt() {
+    if (!result || !refineInput.trim() || isRefining) return;
+
+    setIsRefining(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPrompt: result.optimized_prompt,
+          instruction: refineInput.trim(),
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        handleApiError(response.status, payload);
+        return;
+      }
+
+      // Update the result in-place
+      setResult((prev) =>
+        prev ? { ...prev, optimized_prompt: payload.refined_prompt } : prev,
+      );
+      setRefineInput("");
+
+      // Update history with the refined version
+      saveToHistory({
+        inputPrompt: trimmedPrompt,
+        optimizedPrompt: payload.refined_prompt,
+        recommendations: result.recommendations,
+      });
+      setHistory(getHistory());
+    } catch {
+      setError("Refinement failed. Try again in a moment.");
+    } finally {
+      setIsRefining(false);
+    }
+  }
+
 
   function handleApiError(status: number, payload: ApiError) {
     if (status === 429 && typeof payload.retryAfter === "number") {
@@ -259,6 +392,43 @@ export default function Home() {
     window.open(recommendation.platform_url, "_blank", "noopener,noreferrer");
   }
 
+  async function sharePrompt() {
+    if (!result) return;
+    const hash = encodePromptToHash(result.optimized_prompt);
+    const shareUrl = `${window.location.origin}${window.location.pathname}${hash}`;
+    await navigator.clipboard.writeText(shareUrl);
+    setCopied("share");
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopied(""), 2000);
+  }
+
+  function loadFromHistory(entry: HistoryEntry) {
+    setResult({
+      optimized_prompt: entry.optimizedPrompt,
+      recommendations: entry.recommendations as Record<RecommendationTier, Recommendation>,
+    });
+    setPrompt(entry.inputPrompt);
+    setActiveTab("open_source");
+    setShowHistory(false);
+    setOutputMode("chat");
+  }
+
+  function getApiModeOutput(): string {
+    if (!result) return "";
+    const activeRec = result.recommendations[activeTab];
+    return JSON.stringify(
+      {
+        model: activeRec?.model_name || "recommended-model",
+        messages: [
+          { role: "system", content: result.optimized_prompt },
+          { role: "user", content: "Execute the task described above." },
+        ],
+      },
+      null,
+      2,
+    );
+  }
+
   const activeRecommendation = result?.recommendations[activeTab];
 
   return (
@@ -285,8 +455,128 @@ export default function Home() {
             <span className="text-base leading-none">🤖</span>
             AI Prompt Generator
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setShowHistory(!showHistory); setHistory(getHistory()); }}
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.05] bg-white/70 shadow-sm backdrop-blur-md transition hover:bg-black/[0.03] dark:border-white/[0.08] dark:bg-black/50 dark:hover:bg-white/[0.06]"
+              aria-label="Prompt history"
+            >
+              <History className="h-4 w-4 text-slate-600 dark:text-slate-300" />
+              {history.length > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">
+                  {history.length}
+                </span>
+              )}
+            </button>
+            <ThemeToggle />
+          </div>
         </motion.header>
+
+        {/* History Drawer */}
+        <AnimatePresence>
+          {showHistory && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, type: "spring", stiffness: 400, damping: 30 }}
+              className="mt-4 overflow-hidden rounded-[2rem] border border-black/[0.05] bg-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-black/40 dark:shadow-black/20"
+            >
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">History</p>
+                    <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950 dark:text-white">Past Generations</h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {history.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { clearHistory(); setHistory([]); }}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Clear
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowHistory(false)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-black/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.06]"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {history.length === 0 ? (
+                  <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">No prompt history yet. Generate your first prompt!</p>
+                ) : (
+                  <div className="mt-4 grid gap-2">
+                    {history.map((entry) => (
+                      <button
+                        type="button"
+                        key={entry.id}
+                        onClick={() => loadFromHistory(entry)}
+                        className="group rounded-xl border border-black/[0.05] bg-black/[0.02] p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-white/[0.06] dark:bg-[#1c1c1e] dark:hover:border-blue-700 dark:hover:bg-blue-950/20"
+                      >
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200 line-clamp-1">
+                          {entry.inputPrompt}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 line-clamp-1">
+                          {entry.optimizedPrompt.slice(0, 80)}...
+                        </p>
+                        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Shared Prompt View (from URL hash) */}
+        <AnimatePresence>
+          {sharedPrompt && !result && (
+            <motion.section
+              variants={fadeUp}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="mx-auto mt-8 w-full max-w-4xl rounded-[2rem] border border-blue-200 bg-blue-50/50 p-6 shadow-sm dark:border-blue-900/40 dark:bg-blue-950/20"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">Shared Prompt</p>
+                  <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950 dark:text-white">Someone shared this with you</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copyText("shared", sharedPrompt)}
+                    className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/[0.05] bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-black/[0.02] dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300"
+                  >
+                    <Clipboard className="h-4 w-4" />
+                    {copied === "shared" ? "Copied" : "Copy"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSharedPrompt(null)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-black/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.06]"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <pre className="mt-4 whitespace-pre-wrap break-words rounded-xl border border-black/[0.05] bg-white/80 p-4 font-sans text-sm leading-relaxed text-slate-800 dark:border-white/[0.08] dark:bg-black/40 dark:text-slate-200">
+                {sharedPrompt}
+              </pre>
+            </motion.section>
+          )}
+        </AnimatePresence>
 
         <section className="flex flex-1 flex-col justify-center py-10">
           <motion.div
@@ -362,6 +652,22 @@ export default function Home() {
                   Add a bit more detail — describe what you want to build or accomplish.
                 </motion.p>
               ) : null}
+            </AnimatePresence>
+
+            {/* URL Detection Badge */}
+            <AnimatePresence>
+              {detectedUrl && (
+                <motion.div
+                  variants={fadeUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  {isExtracting ? "Extracting page content..." : "URL detected — context will be injected"}
+                </motion.div>
+              )}
             </AnimatePresence>
 
             {!isGuided && (
@@ -573,26 +879,77 @@ export default function Home() {
                 className="mx-auto mt-5 grid w-full max-w-4xl gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"
               >
                 <div className="rounded-[2rem] border border-black/[0.05] bg-white/80 p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl dark:border-gray-800 dark:bg-black/40 dark:shadow-black/20">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
-                        Output
-                      </p>
-                      <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                        Master prompt
-                      </h2>
+                  <div className="flex flex-col gap-3">
+                    {/* Header row */}
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
+                          Output
+                        </p>
+                        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                          Master prompt
+                        </h2>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Share Button */}
+                        <button
+                          type="button"
+                          onClick={sharePrompt}
+                          disabled={!result}
+                          className="inline-flex h-10 items-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-black/40"
+                        >
+                          <Link2 className="h-4 w-4" />
+                          {copied === "share" ? "Link copied!" : "Share"}
+                        </button>
+                        {/* Copy Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!result) return;
+                            const text = outputMode === "api" ? getApiModeOutput() : result.optimized_prompt;
+                            copyText("prompt", text);
+                          }}
+                          disabled={!result}
+                          className="inline-flex h-10 items-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-black/40"
+                        >
+                          <Clipboard className="h-4 w-4" />
+                          {copied === "prompt" ? "Copied" : "Copy"}
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => result && copyText("prompt", result.optimized_prompt)}
-                      disabled={!result}
-                      className="inline-flex h-10 items-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-black/40"
-                    >
-                      <Clipboard className="h-4 w-4" />
-                      {copied === "prompt" ? "Copied" : "Copy"}
-                    </button>
+
+                    {/* Developer Mode Toggle */}
+                    {result && (
+                      <div className="flex items-center justify-between rounded-xl bg-black/[0.04] p-1.5 dark:bg-white/[0.04]">
+                        <button
+                          type="button"
+                          onClick={() => setOutputMode("chat")}
+                          className={cn(
+                            "flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-all duration-200",
+                            outputMode === "chat"
+                              ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
+                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          )}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" /> Chat Mode
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOutputMode("api")}
+                          className={cn(
+                            "flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-all duration-200",
+                            outputMode === "api"
+                              ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
+                              : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                          )}
+                        >
+                          <Code2 className="h-3.5 w-3.5" /> API Mode
+                        </button>
+                      </div>
+                    )}
                   </div>
 
+                  {/* Prompt Output */}
                   <div className="mt-5 min-h-[340px] overflow-auto rounded-2xl border border-black/[0.05] bg-black/[0.02] p-5 dark:border-white/[0.08] dark:bg-black/60">
                     {isLoading ? (
                       <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 text-center text-slate-500 dark:text-slate-400">
@@ -600,11 +957,38 @@ export default function Home() {
                         <p className="font-medium">Generating a structured RTCFC prompt.</p>
                       </div>
                     ) : result ? (
-                      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-slate-800 dark:text-slate-200">
-                        {result.optimized_prompt}
+                      <pre className={cn(
+                        "whitespace-pre-wrap break-words font-sans text-sm leading-relaxed",
+                        outputMode === "api"
+                          ? "font-mono text-emerald-700 dark:text-emerald-300"
+                          : "text-slate-800 dark:text-slate-200"
+                      )}>
+                        {outputMode === "api" ? getApiModeOutput() : result.optimized_prompt}
                       </pre>
                     ) : null}
                   </div>
+
+                  {/* Tweak It — Refinement Input */}
+                  {result && !isLoading && (
+                    <div className="mt-4 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={refineInput}
+                        onChange={(e) => setRefineInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") refinePrompt(); }}
+                        placeholder="Refine: e.g., make it shorter, add error handling..."
+                        className="flex-1 rounded-xl border border-black/[0.06] bg-white/90 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={refinePrompt}
+                        disabled={!refineInput.trim() || isRefining}
+                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
+                      >
+                        {isRefining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-[2rem] border border-black/[0.05] bg-white/80 p-5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl dark:border-gray-800 dark:bg-black/40 dark:shadow-black/20">
