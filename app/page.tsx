@@ -180,6 +180,54 @@ export default function Home() {
     setDetectedUrl(urlMatch ? urlMatch[0] : null);
   }, [trimmedPrompt]);
 
+  // Keyboard shortcuts for power users
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod) return;
+
+      // Ctrl/Cmd + Enter → Generate prompt
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (hasEnoughContext && !isLoading && !isCoolingDown) {
+          if (isGuidedModeEnabled && !isGuided) {
+            requestClarifications();
+          } else {
+            generatePrompt();
+          }
+        }
+        return;
+      }
+
+      // Ctrl/Cmd + Shift + C → Copy output
+      if (e.key === "C" && e.shiftKey) {
+        e.preventDefault();
+        if (result) {
+          const text = outputMode === "api" ? getApiModeOutput() : result.optimized_prompt;
+          navigator.clipboard.writeText(text);
+          setCopied("prompt");
+          if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+          copyTimeoutRef.current = setTimeout(() => setCopied(""), 1600);
+        }
+        return;
+      }
+
+      // Ctrl/Cmd + H → Toggle history
+      if (e.key === "h" || e.key === "H") {
+        // Don't capture if user is typing in an input/textarea
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        e.preventDefault();
+        setShowHistory((prev) => !prev);
+        setHistory(getHistory());
+        return;
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasEnoughContext, isLoading, isCoolingDown, isGuidedModeEnabled, isGuided, result, outputMode]);
+
   async function requestClarifications() {
     if (!hasEnoughContext || isCoolingDown) {
       return;
@@ -759,6 +807,13 @@ export default function Home() {
                 </motion.div>
               ) : null}
             </AnimatePresence>
+
+            {/* Keyboard Shortcuts Hint — desktop only */}
+            <div className="mt-5 hidden items-center justify-center gap-5 text-[11px] font-medium text-slate-400 dark:text-slate-500 sm:flex">
+              <span><kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⌘/Ctrl</kbd> + <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">Enter</kbd> Generate</span>
+              <span><kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⌘/Ctrl</kbd> + <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⇧ C</kbd> Copy</span>
+              <span><kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⌘/Ctrl</kbd> + <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">H</kbd> History</span>
+            </div>
           </motion.section>
 
           <AnimatePresence>

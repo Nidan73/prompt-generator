@@ -2,12 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { ClarifyRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 
 export const runtime = "edge";
-
-type ClarifyRequest = {
-  prompt?: unknown;
-};
 
 export type ClarifyingQuestion = {
   id: string;
@@ -102,25 +99,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: ClarifyRequest;
+  const parsed = await parseRequestBody(request, ClarifyRequestSchema);
+  if (parsed.error) return parsed.error;
 
-  try {
-    body = (await request.json()) as ClarifyRequest;
-  } catch {
-    return NextResponse.json(
-      { error: "Request body must be valid JSON." },
-      { status: 400 },
-    );
-  }
-
-  const userPrompt = normalizePrompt(body.prompt);
-
-  if (!userPrompt) {
-    return NextResponse.json(
-      { error: "A non-empty prompt is required." },
-      { status: 400 },
-    );
-  }
+  const { prompt: userPrompt } = parsed.data;
 
   try {
     const userContent = `Create guided-mode clarification questions for this rough prompt:\n${userPrompt}`;

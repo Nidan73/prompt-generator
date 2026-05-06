@@ -3,13 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { buildRegistryBlock, resolveRecommendations, getLiveModelLandscape } from "@/lib/ai-catalog";
+import { GenerateRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 
 export const runtime = "edge";
-
-type GenerateRequest = {
-  prompt?: unknown;
-  clarifications?: unknown;
-};
 
 type DispatcherResponse = {
   optimized_prompt: string;
@@ -80,23 +76,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: GenerateRequest;
+  const parsed = await parseRequestBody(request, GenerateRequestSchema);
+  if (parsed.error) return parsed.error;
 
-  try {
-    body = (await request.json()) as GenerateRequest;
-  } catch {
-    return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
-  }
-
-  const userPrompt = normalizePrompt(body.prompt);
-
-  if (!userPrompt) {
-    return NextResponse.json({ error: "A non-empty prompt is required." }, { status: 400 });
-  }
+  const { prompt: userPrompt, clarifications } = parsed.data;
 
   try {
     const liveLandscape = await getLiveModelLandscape();
-    const llmContent = await createDispatcherCompletion(userPrompt, body.clarifications, liveLandscape);
+    const llmContent = await createDispatcherCompletion(userPrompt, clarifications, liveLandscape);
     const parsed = parseAndResolve(llmContent);
 
     return NextResponse.json(parsed, {
@@ -121,20 +108,14 @@ function getClientIdentifier(request: NextRequest) {
   return forwardedFor || realIp || cloudflareIp || "anonymous";
 }
 
-function normalizePrompt(prompt: unknown) {
-  if (typeof prompt !== "string") return "";
-  return prompt.trim().slice(0, 4000);
-}
-
-function serializeClarifications(clarifications: unknown) {
-  if (!clarifications) return "None provided.";
-  if (typeof clarifications === "string") return clarifications.trim().slice(0, 2000) || "None provided.";
-  try { return JSON.stringify(clarifications).slice(0, 2000); } catch { return "None provided."; }
+function serializeClarifications(clarifications: Array<{ question: string; answer: string }>) {
+  if (clarifications.length === 0) return "None provided.";
+  return JSON.stringify(clarifications).slice(0, 2000);
 }
 
 // ─── LLM Orchestration ────────────────────────────────────────────────────────
 
-async function createDispatcherCompletion(userPrompt: string, clarifications: unknown, liveLandscape: string) {
+async function createDispatcherCompletion(userPrompt: string, clarifications: Array<{ question: string; answer: string }>, liveLandscape: string) {
   const selectedOptions = serializeClarifications(clarifications);
   const systemPrompt = buildSystemPrompt(userPrompt, selectedOptions, liveLandscape);
   const userContent = "Return the strict JSON response now.";

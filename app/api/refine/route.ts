@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 
 export const runtime = "edge";
-
-type RefineRequest = {
-  currentPrompt?: unknown;
-  instruction?: unknown;
-};
 
 // Multi-provider fallback chain for lightweight prompt refinement.
 type ProviderConfig = {
@@ -74,23 +70,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: RefineRequest;
+  const parsed = await parseRequestBody(request, RefineRequestSchema);
+  if (parsed.error) return parsed.error;
 
-  try {
-    body = (await request.json()) as RefineRequest;
-  } catch {
-    return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
-  }
-
-  const currentPrompt = typeof body.currentPrompt === "string" ? body.currentPrompt.trim() : "";
-  const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
-
-  if (!currentPrompt) {
-    return NextResponse.json({ error: "A non-empty currentPrompt is required." }, { status: 400 });
-  }
-  if (!instruction) {
-    return NextResponse.json({ error: "A non-empty instruction is required." }, { status: 400 });
-  }
+  const { currentPrompt, instruction } = parsed.data;
 
   try {
     const userContent = `EXISTING PROMPT:\n${currentPrompt.slice(0, 6000)}\n\nMODIFICATION REQUESTED:\n${instruction.slice(0, 500)}`;
