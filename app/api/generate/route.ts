@@ -148,8 +148,10 @@ function buildSystemPrompt(userPrompt: string, selectedOptions: string, liveLand
 Your job has two parts.
 
 PART 1 — MASTER PROMPT
-Expand the user's rough input into a structured, expert-grade prompt using the RTCFC framework.
+Determine if the user is asking for a TEXT/LOGIC prompt or an IMAGE GENERATION prompt (e.g., Midjourney, DALL-E, Stable Diffusion).
 
+IF TEXT/LOGIC PROMPT:
+Expand the user's rough input into a structured, expert-grade prompt using the RTCFC framework.
 Rules:
 - You are writing the final prompt the user will copy/paste. Act as the user.
 - Do NOT add meta-commentary, preamble, or instructions about the prompt itself.
@@ -174,6 +176,14 @@ Constraints
 4. Ask me any clarifying questions if you need more context to understand my intent better.
 
 - Always append the above exact sentence (about asking clarifying questions) as the final constraint.
+
+IF IMAGE GENERATION PROMPT:
+Abandon the RTCFC framework. Instead, generate a highly detailed, comma-separated visual prompt optimized for Midjourney v6 / DALL-E 3.
+Rules:
+- Output a single, dense paragraph. No section headers.
+- Follow this structure: [Subject description], [Action/Pose], [Setting/Background], [Lighting], [Medium/Art Style], [Camera Angle/Lens], [Color Palette], [Parameters/Stylization].
+- Example: "A cyberpunk samurai standing in a neon-lit alleyway, raining, holding a glowing katana, cinematic lighting, dramatic shadows, 8k resolution, unreal engine 5 render, highly detailed, vivid magenta and cyan color palette, low angle shot --ar 16:9"
+- Do NOT include text instructions or meta-commentary, just the pure visual prompt.
 
 PART 2 — MODEL ROUTING (Ranking-Based)
 You must recommend the best AI model for this specific task across three tiers.

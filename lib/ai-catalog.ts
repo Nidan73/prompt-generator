@@ -43,6 +43,9 @@ export const PLATFORM_REGISTRY: Platform[] = [
   { id: "mistral",     name: "Mistral Le Chat",       url: "https://chat.mistral.ai",       tiers: ["open_source", "freemium"] },
   { id: "perplexity",  name: "Perplexity",            url: "https://perplexity.ai",         tiers: ["freemium", "premium"] },
   { id: "poe",         name: "Poe",                   url: "https://poe.com",               tiers: ["freemium"] },
+  { id: "midjourney",  name: "Midjourney",            url: "https://midjourney.com",        tiers: ["premium"] },
+  { id: "dalle",       name: "DALL-E 3",              url: "https://chatgpt.com",           tiers: ["premium"] },
+  { id: "stablediffusion", name: "Stable Diffusion",  url: "https://stability.ai",          tiers: ["open_source", "freemium"] },
 ];
 
 // ─── Provider → Platform Mapping ───────────────────────────────────────────────
@@ -70,7 +73,7 @@ const NOISE_FILTERS = [
   // Non-text modalities — not useful for prompt routing
   "embedding", "tts", "whisper", "audio", "speech",
   // Image generation / image-focused variants — not text chat
-  "nano banana", "image gen", "image 2", "image preview", "dall-e",
+  "nano banana", "image gen", "image 2", "image preview",
   // API-only variants — not available in consumer chat UIs
   "custom tools", "batch", "realtime",
   // Infrastructure duplicates
@@ -81,7 +84,7 @@ const NOISE_FILTERS = [
 // Used when OpenRouter is completely unreachable. Updated periodically.
 // This is a safety net, not the primary source.
 
-const STATIC_FALLBACK_LANDSCAPE = `CURRENT MODEL LANDSCAPE (static fallback — may be slightly outdated):
+const STATIC_FALLBACK_LANDSCAPE = `CURRENT MODEL LANDSCAPE:
 - OpenAI GPT: GPT-5.5 Pro, GPT-5.5, GPT-5.4 Nano → use platform [chatgpt]
 - OpenAI Reasoning: o3 Deep Research, o4 Mini Deep Research, o3 Pro → use platform [chatgpt]
 - Anthropic Claude: Claude Opus 4.7, Claude Opus 4.6, Claude Sonnet 4.6 → use platform [claude]
@@ -91,6 +94,11 @@ const STATIC_FALLBACK_LANDSCAPE = `CURRENT MODEL LANDSCAPE (static fallback — 
 - xAI Grok: Grok 4.20 Multi-Agent, Grok 4.20, Grok 4.1 Fast → use platform [grok]
 - Mistral: Mistral Small 4, Mistral Small Creative, Devstral 2 → use platform [mistral]
 - Qwen: Qwen3.6 Plus, Qwen3.5-9B → use platform [huggingface]
+
+IMAGE GENERATION MODELS:
+- Midjourney: Midjourney v6.1 → use platform [midjourney]
+- OpenAI: DALL-E 3 → use platform [dalle]
+- Stability AI: Stable Diffusion 3, SDXL → use platform [stablediffusion]
 
 IMPORTANT: Do NOT recommend older versions when newer ones exist above.`;
 
@@ -166,8 +174,12 @@ export async function getLiveModelLandscape(): Promise<string> {
       }
     }
 
-    landscape +=
-      "\nIMPORTANT: The list above shows the latest released models. Do NOT recommend older versions. Use the platform ID in brackets [like_this] for your routing picks.";
+    landscape += `\nIMAGE GENERATION MODELS:
+- Midjourney: Midjourney v6.1 → use platform [midjourney]
+- OpenAI: DALL-E 3 → use platform [dalle]
+- Stability AI: Stable Diffusion 3, SDXL → use platform [stablediffusion]
+
+IMPORTANT: The list above shows the latest released models. Do NOT recommend older versions. Use the platform ID in brackets [like_this] for your routing picks.`;
 
     return landscape;
   } catch {
