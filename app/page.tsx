@@ -1137,6 +1137,8 @@ export default function Home() {
             >
               Nidan Alam
             </a>
+            <span className="mx-2 opacity-30">•</span>
+            <span className="text-xs tracking-wider opacity-60">v1.0.0</span>
           </p>
         </footer>
       </div>
