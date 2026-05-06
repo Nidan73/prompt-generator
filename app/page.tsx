@@ -502,7 +502,7 @@ export default function Home() {
         >
           <div className="inline-flex h-10 items-center gap-2 rounded-full border border-black/[0.05] bg-white/80 px-4 text-sm font-semibold shadow-sm shadow-slate-200/60 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70 dark:shadow-black/20">
           
-            Bhai Thik Kor  <span className="text-base leading-none">😤</span>
+            Bhai Thik Kor<span className="text-base leading-none">😤</span>
           </div>
           <div className="flex items-center gap-2">
             <button
