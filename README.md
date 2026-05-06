@@ -1,6 +1,6 @@
 # Bhai Thik Kor (Production Architecture)
 
-Live : https://bhai-thik-kor.vercel.app/`
+Live : https://bhaithikkor.vercel.app/`
 
 **Turn a vague idea into an expert-grade AI prompt — and know exactly where to run it.**
 
