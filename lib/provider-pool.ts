@@ -14,13 +14,12 @@
  * ┌──────────────────────────────────────────────────────────────────────┐
  * │  LIVE FREE-TIER CAPACITY (verified from API keys 2026-05-07)       │
  * │                                                                    │
- * │  Gemini:      1500 RPD × 8 models  = ~12000 requests/day          │
- * │  Groq:        100k TPD × 5 models  = ~500k tokens/day             │
- * │  OpenRouter:  ~200 RPD × 5 models  = ~1000 requests/day           │
+ * │  Groq:        100k TPD × 5 models  = ~500k tokens/day  (FASTEST)  │
+ * │  Gemini:      1500 RPD × 4 models  = ~6000 requests/day           │
+ * │  OpenRouter:  ~200 RPD × 3 models  = ~600 requests/day            │
  * │                                                                    │
- * │  GENERATE pool: 16 models → each model gets ~6% of traffic        │
- * │  CLARIFY pool:  11 models → each model gets ~9% of traffic        │
- * │  REFINE pool:   12 models → each model gets ~8% of traffic        │
+ * │  Strategy: Groq models FIRST for speed, Gemini as reliable backup, │
+ * │  OpenRouter as last-resort safety net.                             │
  * └──────────────────────────────────────────────────────────────────────┘
  */
 
@@ -38,58 +37,15 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // ─── GENERATE Pool (needs smart models for complex JSON + switchboard output) ──
-// All models here verified to support response_format: { type: "json_object" }
-// via their OpenAI-compatible endpoints.
+// Strategy: Groq first (fastest inference), then Gemini (highest quota),
+// then OpenRouter (free safety net). All verified live 2026-05-07.
 
 export const GENERATE_POOL: ProviderConfig[] = [
-  // ── Gemini (1500 RPD each, per-model independent limits) ──
-  {
-    name: "Gemini 3.1 Pro",
-    url: GEMINI_URL,
-    model: "gemini-3.1-pro-preview",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Gemini 2.5 Pro",
-    url: GEMINI_URL,
-    model: "gemini-2.5-pro",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Gemini 2.5 Flash",
-    url: GEMINI_URL,
-    model: "gemini-2.5-flash",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Gemini 2.0 Flash",
-    url: GEMINI_URL,
-    model: "gemini-2.0-flash",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Gemini 2.0 Flash Lite",
-    url: GEMINI_URL,
-    model: "gemini-2.0-flash-lite",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Gemini 2.5 Flash Lite",
-    url: GEMINI_URL,
-    model: "gemini-2.5-flash-lite",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  // ── Groq (100k TPD each, per-model independent limits) ──
+  // ── Groq (100k TPD each, ~800 tok/s — FASTEST provider) ──
   {
     name: "Groq Llama 3.3 70B",
     url: GROQ_URL,
     model: "llama-3.3-70b-versatile",
-    apiKey: process.env.GROQ_API_KEY,
-  },
-  {
-    name: "Groq Llama 4 Scout",
-    url: GROQ_URL,
-    model: "meta-llama/llama-4-scout-17b-16e-instruct",
     apiKey: process.env.GROQ_API_KEY,
   },
   {
@@ -105,59 +61,22 @@ export const GENERATE_POOL: ProviderConfig[] = [
     apiKey: process.env.GROQ_API_KEY,
   },
   {
+    name: "Groq Llama 4 Scout",
+    url: GROQ_URL,
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    apiKey: process.env.GROQ_API_KEY,
+  },
+  {
     name: "Groq Llama 3.1 8B",
     url: GROQ_URL,
     model: "llama-3.1-8b-instant",
     apiKey: process.env.GROQ_API_KEY,
   },
-  // ── OpenRouter (free-tier, ~200 RPD each) ──
+  // ── Gemini (1500 RPD each — reliable high-quota backup) ──
   {
-    name: "OR Gemini 2.5 Flash",
-    url: OPENROUTER_URL,
-    model: "google/gemini-2.5-flash:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-  {
-    name: "OR GPT-OSS 120B",
-    url: OPENROUTER_URL,
-    model: "openai/gpt-oss-120b:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-  {
-    name: "OR Llama 3.3 70B",
-    url: OPENROUTER_URL,
-    model: "meta-llama/llama-3.3-70b-instruct:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-  {
-    name: "OR Gemma 4 31B",
-    url: OPENROUTER_URL,
-    model: "google/gemma-4-31b-it:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-  {
-    name: "OR Qwen3 Coder",
-    url: OPENROUTER_URL,
-    model: "qwen/qwen3-coder:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-];
-
-// ─── CLARIFY Pool (lightweight, speed-first for guided questions) ──────────────
-// Prioritizes fast response times. Smaller/lite models preferred.
-
-export const CLARIFY_POOL: ProviderConfig[] = [
-  // ── Gemini (ultra-fast, 1500 RPD each) ──
-  {
-    name: "Gemini 3.1 Pro",
+    name: "Gemini 2.5 Flash",
     url: GEMINI_URL,
-    model: "gemini-3.1-pro-preview",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Gemini 2.0 Flash Lite",
-    url: GEMINI_URL,
-    model: "gemini-2.0-flash-lite",
+    model: "gemini-2.5-flash",
     apiKey: process.env.GEMINI_API_KEY,
   },
   {
@@ -167,12 +86,43 @@ export const CLARIFY_POOL: ProviderConfig[] = [
     apiKey: process.env.GEMINI_API_KEY,
   },
   {
+    name: "Gemini 3.1 Pro",
+    url: GEMINI_URL,
+    model: "gemini-3.1-pro-preview",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
     name: "Gemini 2.0 Flash",
     url: GEMINI_URL,
     model: "gemini-2.0-flash",
     apiKey: process.env.GEMINI_API_KEY,
   },
-  // ── Groq (blazing fast inference, 100k TPD each) ──
+  // ── OpenRouter (free safety net) ──
+  {
+    name: "OR GPT-OSS 120B",
+    url: OPENROUTER_URL,
+    model: "openai/gpt-oss-120b:free",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  },
+  {
+    name: "OR GPT-OSS 20B",
+    url: OPENROUTER_URL,
+    model: "openai/gpt-oss-20b:free",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  },
+  {
+    name: "OR Nemotron 120B",
+    url: OPENROUTER_URL,
+    model: "nvidia/nemotron-3-super-120b-a12b:free",
+    apiKey: process.env.OPENROUTER_API_KEY,
+  },
+];
+
+// ─── CLARIFY Pool (lightweight, speed-first for guided questions) ──────────────
+// Prioritizes fast response times. Smaller models preferred.
+
+export const CLARIFY_POOL: ProviderConfig[] = [
+  // ── Groq (blazing fast, 100k TPD each) ──
   {
     name: "Groq Llama 3.1 8B",
     url: GROQ_URL,
@@ -186,53 +136,22 @@ export const CLARIFY_POOL: ProviderConfig[] = [
     apiKey: process.env.GROQ_API_KEY,
   },
   {
-    name: "Groq GPT-OSS 20B",
-    url: GROQ_URL,
-    model: "openai/gpt-oss-20b",
-    apiKey: process.env.GROQ_API_KEY,
-  },
-  {
     name: "Groq Qwen3 32B",
     url: GROQ_URL,
     model: "qwen/qwen3-32b",
     apiKey: process.env.GROQ_API_KEY,
   },
-  // ── OpenRouter (free-tier fallback) ──
   {
-    name: "OR Gemma 4 26B",
-    url: OPENROUTER_URL,
-    model: "google/gemma-4-26b-a4b-it:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
+    name: "Groq GPT-OSS 20B",
+    url: GROQ_URL,
+    model: "openai/gpt-oss-20b",
+    apiKey: process.env.GROQ_API_KEY,
   },
+  // ── Gemini (ultra-fast lite models, 1500 RPD each) ──
   {
-    name: "OR GPT-OSS 20B",
-    url: OPENROUTER_URL,
-    model: "openai/gpt-oss-20b:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-  {
-    name: "OR Llama 3.2 3B",
-    url: OPENROUTER_URL,
-    model: "meta-llama/llama-3.2-3b-instruct:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-];
-
-// ─── REFINE Pool (needs good instruction-following for structural edits) ───────
-// Must preserve XML tags, AIDA headers, and other frameworks during edits.
-
-export const REFINE_POOL: ProviderConfig[] = [
-  // ── Gemini (best instruction-following, 1500 RPD each) ──
-  {
-    name: "Gemini 3.1 Pro",
+    name: "Gemini 2.5 Flash Lite",
     url: GEMINI_URL,
-    model: "gemini-3.1-pro-preview",
-    apiKey: process.env.GEMINI_API_KEY,
-  },
-  {
-    name: "Gemini 2.5 Pro",
-    url: GEMINI_URL,
-    model: "gemini-2.5-pro",
+    model: "gemini-2.5-flash-lite",
     apiKey: process.env.GEMINI_API_KEY,
   },
   {
@@ -247,12 +166,19 @@ export const REFINE_POOL: ProviderConfig[] = [
     model: "gemini-2.0-flash",
     apiKey: process.env.GEMINI_API_KEY,
   },
+  // ── OpenRouter (free-tier fallback) ──
   {
-    name: "Gemini 2.5 Flash Lite",
-    url: GEMINI_URL,
-    model: "gemini-2.5-flash-lite",
-    apiKey: process.env.GEMINI_API_KEY,
+    name: "OR GPT-OSS 20B",
+    url: OPENROUTER_URL,
+    model: "openai/gpt-oss-20b:free",
+    apiKey: process.env.OPENROUTER_API_KEY,
   },
+];
+
+// ─── REFINE Pool (needs good instruction-following for structural edits) ───────
+// Must preserve XML tags, AIDA headers, and other frameworks during edits.
+
+export const REFINE_POOL: ProviderConfig[] = [
   // ── Groq (fast + smart, 100k TPD each) ──
   {
     name: "Groq Llama 3.3 70B",
@@ -278,23 +204,36 @@ export const REFINE_POOL: ProviderConfig[] = [
     model: "llama-3.1-8b-instant",
     apiKey: process.env.GROQ_API_KEY,
   },
+  // ── Gemini (best instruction-following, 1500 RPD each) ──
+  {
+    name: "Gemini 2.5 Flash",
+    url: GEMINI_URL,
+    model: "gemini-2.5-flash",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
+    name: "Gemini 2.5 Flash Lite",
+    url: GEMINI_URL,
+    model: "gemini-2.5-flash-lite",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
+  {
+    name: "Gemini 3.1 Pro",
+    url: GEMINI_URL,
+    model: "gemini-3.1-pro-preview",
+    apiKey: process.env.GEMINI_API_KEY,
+  },
   // ── OpenRouter (free-tier fallback) ──
   {
-    name: "OR Gemini 2.5 Flash",
+    name: "OR GPT-OSS 120B",
     url: OPENROUTER_URL,
-    model: "google/gemini-2.5-flash:free",
+    model: "openai/gpt-oss-120b:free",
     apiKey: process.env.OPENROUTER_API_KEY,
   },
   {
-    name: "OR Llama 3.3 70B",
+    name: "OR Nemotron 120B",
     url: OPENROUTER_URL,
-    model: "meta-llama/llama-3.3-70b-instruct:free",
-    apiKey: process.env.OPENROUTER_API_KEY,
-  },
-  {
-    name: "OR Gemma 4 31B",
-    url: OPENROUTER_URL,
-    model: "google/gemma-4-31b-it:free",
+    model: "nvidia/nemotron-3-super-120b-a12b:free",
     apiKey: process.env.OPENROUTER_API_KEY,
   },
 ];
