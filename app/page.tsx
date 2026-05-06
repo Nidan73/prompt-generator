@@ -648,8 +648,7 @@ export default function Home() {
               Turn a rough idea into an expert-grade execution prompt.
             </h1>
             <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-600 sm:text-lg dark:text-slate-400">
-              Guided questions sharpen the intent. The dispatcher builds a structured RTCFC
-              prompt and routes it to consumer chat interfaces that can run it immediately.
+              Stop writing generic prompts. Our engine detects your intent, wraps it in a specialized structural framework, and routes it directly to the state-of-the-art AI model that excels at it.
             </p>
           </motion.div>
 
