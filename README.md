@@ -1,215 +1,84 @@
-# AI Prompt Generator
+# AI Prompt Dispatcher (Production Architecture)
 
 **Turn a vague idea into an expert-grade AI prompt — and know exactly where to run it.**
 
-![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=nextdotjs)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss&logoColor=white)
-![Groq](https://img.shields.io/badge/Groq-SDK-F55036)
-![Upstash](https://img.shields.io/badge/Upstash-Redis-00E9A3)
-![License](https://img.shields.io/badge/License-MIT-green)
+![Vercel Edge](https://img.shields.io/badge/Vercel-Edge-000000)
 
-AI Prompt Generator transforms rough, low-effort input into structured execution-ready prompts using the **RTCFC framework** (Role, Task, Context, Format, Constraints). It then routes each prompt to the best AI platform for the job using **ranking-based model analysis** — no hardcoded bias, no static model lists.
+The AI Prompt Dispatcher is a production-grade prompt engineering workspace. It transforms rough, low-effort input into structured, execution-ready prompts using a **7-Category Dynamic Switchboard**. It then routes each prompt to the best AI platform for the job using **ranking-based model analysis** — zero hardcoded bias, no static model lists.
 
-## What It Does
+---
 
-1. **Accepts a rough idea** — "build a dashboard", "write a landing page", "explain quantum computing"
-2. **Guided Mode** (optional) — short multiple-choice questions sharpen the intent before generation
-3. **Generates a master RTCFC prompt** — structured, copy-ready, expert-grade
-4. **Recommends three AI platforms** — ranked by task fit across three tiers:
-   - **Open Source** — best open-weight model for the task
-   - **Freemium** — best free-tier consumer chat for the task
-   - **Premium** — absolute state-of-the-art for the task
-5. **Explains each recommendation** — every pick includes reasoning so you understand *why* that model was chosen
+## 🏛️ System Architecture & Workflow
 
-## How Routing Works
+### 1. Context Extraction (`/api/extract`)
+Users can paste URLs directly into their prompts. The system detects the URL and extracts its content to use as grounding context.
+- **Primary Engine:** Uses Jina Reader API to execute JavaScript and parse SPAs/React sites into clean Markdown.
+- **Fallback:** Direct `fetch` with aggressive regex HTML stripping for static sites if Jina times out.
 
-The routing system has **zero hardcoded model bias**. It works in two layers:
+### 2. Intent Detection & Guided Mode (`/api/clarify`)
+If the user clicks "Guide Me", the engine detects their intent across 7 categories (Code, Video, Image, Copywriting, Data, Meta-Prompting, Generic).
+- It dynamically generates 3 highly specific multiple-choice questions (e.g., asking about *Camera Angles* for Video tasks, or *Tech Stack* for Coding tasks).
 
-| Layer | What it does | What it doesn't do |
-|---|---|---|
-| **Platform Registry** (`lib/ai-catalog.ts`) | Stores verified chat URLs for 12 platforms | No model names, no rankings, no opinions |
-| **LLM Ranking Engine** (system prompt) | Analyzes the task, ranks models by benchmark fit, picks platforms, explains why | Never invents URLs — picks from verified registry |
+### 3. The Switchboard Prompt Engine (`/api/generate`)
+The orchestration layer no longer relies on a one-size-fits-all framework. It acts as a routing switchboard:
+- **Code:** Generates XML `<file>` and `<thinking>` blocks optimized for Claude 3.5 Sonnet / GPT-4o.
+- **Copywriting:** Enforces AIDA (Attention, Interest, Desire, Action) or PAS frameworks.
+- **Data/Math:** Enforces strict Chain-of-Thought (CoT) reasoning.
+- **Video:** Outputs dense, comma-separated physics, motion, and camera tags.
+- **Images:** Outputs a 12-dimension visual matrix.
+- **Generic:** Falls back to the RTCFC framework (Role, Task, Context, Format, Constraints).
 
-The LLM acts as an expert AI analyst: it identifies task demands (coding, writing, math, research, etc.), considers benchmark standings (LMSYS ELO, MMLU, HumanEval, MATH, GPQA), and recommends the latest model version on the best platform.
+### 4. Zero-Bias Model Routing
+The LLM acts as an expert AI analyst. It identifies task demands (coding, writing, math, research, etc.), considers benchmark standings (LMSYS ELO, MMLU, HumanEval, MATH), and recommends the latest model version on the best platform across 3 tiers (Open Source, Freemium, Premium).
+- **Platform Registry:** `lib/ai-catalog.ts` stores verified chat URLs. The LLM is forbidden from inventing URLs.
 
-**To add a new platform**, add one line to `lib/ai-catalog.ts`. The LLM will automatically consider it for future recommendations.
+### 5. Adaptive Refinement (`/api/refine`)
+The "Tweak It" chat bar allows users to adjust the generated prompt in-place. The refinement engine automatically analyzes the prompt's *current structural format* (XML, comma tags, AIDA, RTCFC) and seamlessly preserves that exact layout while applying the tweak.
 
-## The $0 Architecture
+---
 
-### Multi-Provider Fallback Engine
+## 🛡️ Reliability & Security Layer
 
-Free APIs have strict Requests-Per-Minute (RPM) limits. To prevent 429 rate limit errors when traffic spikes, the generation route automatically cascades through three free-tier endpoints via an OpenAI-compatible REST pipeline:
+- **Zod Type Safety:** All 4 Edge API routes enforce strict `zod` schema validation (`lib/api-schemas.ts`) to prevent malformed JSON and cap input lengths.
+- **Multi-Provider Fallback Pipeline:** The backend automatically cascades through LLM providers if one fails or rate-limits: `Groq (Primary) → Gemini (Fallback 1) → OpenRouter (Fallback 2)`.
+- **Upstash Redis Rate Limiting:** Sliding-window rate limiting on all API routes (e.g., 5 req / 1 min / IP).
+- **Vercel Edge Runtime:** All APIs run on the Vercel Edge for sub-millisecond cold starts globally.
 
-```txt
-1. Groq (llama-3.3-70b-versatile) — Fastest, but strict token cap.
-2. Gemini AI Studio (gemini-2.5-flash) — Massive 1M TPM allowance.
-3. OpenRouter (google/gemini-2.5-flash:free) — Uncapped routing fallback.
-```
+---
 
-If any provider fails or rate-limits, the system silently retries with the next one. If you only configure a `GROQ_API_KEY`, the fallbacks are simply bypassed.
+## ⚡ Power User Features
 
-### Upstash Shield
+The UI is optimized for prompt engineers who want to move fast:
+- `Cmd/Ctrl + Enter` → Generate prompt instantly.
+- `Cmd/Ctrl + Shift + C` → Copy generated prompt.
+- `Cmd/Ctrl + H` → Toggle local-first Prompt History drawer.
+- **API Mode:** Toggle to view the final payload as a structured JSON message array for developers.
+- **LZ-String Sharing:** The URL automatically compresses the app state so you can share exact prompts/workflows via links.
 
-Every API route runs through Upstash Redis rate limiting before touching Groq:
+---
 
-```txt
-3 requests / 1 minute / IP
-```
+## 🛠️ Developer Setup & Contribution Guide
 
-The frontend reads `retryAfter` from 429 responses and shows a live cooldown timer.
-
-## Features
-
-- **RTCFC Prompt Engine**: Structured prompts with Role, Task, Context, Format, and Constraints
-- **Guided Mode**: Dynamic multiple-choice questions generated by `llama-3.1-8b-instant`
-- **Ranking-Based Routing**: Model recommendations based on task analysis and benchmark knowledge
-- **Recommendation Reasoning**: Each platform pick includes a justification visible in the UI
-- **Platform Registry**: Verified chat URLs with deterministic fallbacks — zero hallucinated links
-- **Anti-Fragile Parsing**: Handles imperfect LLM JSON, strips markdown artifacts, resolves invalid picks
-- **Groq Free-Tier Fallbacks**: Automatic retry across multiple models on rate limits
-- **Redis Abuse Protection**: Sliding-window rate limiting on all API routes
-- **Vercel Edge Runtime**: API routes run on the Edge for zero cold-start latency worldwide
-- **Native Analytics**: Built-in Vercel Web Analytics for zero-config traffic tracking
-- **Mobile-Optimized UI**: Premium mobile layout with smart auto-scrolling for virtual keyboards
-- **Watermelon Theme**: Unique aesthetic with dynamic 🍉 favicon and integrated solidarity banner
-- **Error Boundary**: Runtime crashes show a recovery UI instead of a white screen
-- **Dark Mode**: Local theme provider with animated Sun/Moon toggle
-- **Copy & Open**: One-click copies the prompt and opens the recommended platform
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | Next.js App Router |
-| UI | React, Tailwind CSS, Framer Motion, lucide-react |
-| Theme | Local class-based theme provider |
-| AI | groq-sdk |
-| Platform Routing | Verified registry + LLM ranking |
-| Rate Limit | @upstash/redis, @upstash/ratelimit |
-| Utility | clsx, tailwind-merge |
-
-## Environment Variables
-
-Create `.env.local` in the project root:
+### Environment Variables
+Create a `.env.local` file. The app requires Upstash Redis, but you only need one LLM API key to run it (adding more enables the fallback cascade).
 
 ```env
-GROQ_API_KEY="your_groq_api_key"
-UPSTASH_REDIS_REST_URL="https://your-upstash-redis-url.upstash.io"
-UPSTASH_REDIS_REST_TOKEN="your_upstash_redis_rest_token"
-```
-
-Get keys:
-- Groq Console: https://console.groq.com/keys
-- Upstash Console: https://console.upstash.com/
-
-## Installation & Setup
-
-```bash
-git clone https://github.com/Nidan73/prompt-generator.git
-cd prompt-generator
-npm install
-```
-
-Add environment variables to a `.env.local` file in the root directory:
-
-```env
-# Primary LLM API (Fastest) - Get from console.groq.com
-GROQ_API_KEY="gsk_..."
-
-# Secondary LLM Fallback (1M TPM) - Get from aistudio.google.com
-GEMINI_API_KEY="AIza..."
-
-# Tertiary LLM Fallback - Get from openrouter.ai
-OPENROUTER_API_KEY="sk-or-v1-..."
-
-# Upstash Redis for Rate Limiting - Get from console.upstash.com
+# Required: Rate Limiting
 UPSTASH_REDIS_REST_URL="https://..."
 UPSTASH_REDIS_REST_TOKEN="..."
+
+# LLM Providers (Need at least one)
+GROQ_API_KEY="gsk_..."
+GEMINI_API_KEY="AIza..."
+OPENROUTER_API_KEY="sk-or-v1-..."
 ```
 
-The app will still function if you only provide the `GROQ_API_KEY`, but adding the other two enables massive free-tier scaling by cascading requests if Groq hits a rate limit.
-
-Run the dev server:
-
-```bash
-npm run dev
-```
-
-Open: http://localhost:3000
-
-## Available Scripts
-
-```bash
-npm run dev      # Start development server
-npm run build    # Production build
-npm run start    # Start production server
-npm run lint     # Run ESLint
-```
-
-## API Flow
-
-### `/api/clarify` — Guided Mode
-
-1. Rate limits by IP
-2. Sends the rough prompt to Groq `llama-3.1-8b-instant`
-3. Generates three multiple-choice clarification questions
-4. Parses LLM output defensively
-5. Returns normalized questions to the UI
-
-### `/api/generate` — Prompt Generation & Routing
-
-1. Rate limits by IP
-2. Builds the RTCFC system prompt with platform registry
-3. Calls Groq with fallback chain
-4. LLM returns:
-   - Structured RTCFC prompt
-   - Platform picks (IDs from registry)
-   - Dynamic model names
-   - Reasoning for each pick
-5. Backend resolves platform IDs to verified URLs
-6. Returns complete response to frontend
-
-```ts
-{
-  optimized_prompt: string;
-  recommendations: {
-    open_source: { model_name: string; platform_url: string; reasoning: string };
-    freemium: { model_name: string; platform_url: string; reasoning: string };
-    premium: { model_name: string; platform_url: string; reasoning: string };
-  };
-}
-```
-
-## Safety & Reliability
-
-- Secrets in `.env.local` (git-ignored)
-- Stateless, serverless API routes
-- Redis rate limiting before Groq calls
-- Platform URLs from verified registry — no hallucinated links
-- Deterministic fallbacks for invalid LLM picks
-- Error boundary for runtime crash recovery
-- Anti-fragile JSON parsing with markdown stripping
-
-## Project Structure
-
-```
-prompt-generator/
-├── app/
-│   ├── api/
-│   │   ├── clarify/route.ts    # Guided Mode question generation
-│   │   └── generate/route.ts   # RTCFC prompt + ranking-based routing
-│   ├── error.tsx               # Error boundary
-│   ├── globals.css             # Design tokens
-│   ├── layout.tsx              # Root layout + theme boot
-│   └── page.tsx                # Main UI (single-page app)
-├── components/
-│   └── theme-provider.tsx      # Light/dark theme system
-├── lib/
-│   └── ai-catalog.ts           # Platform registry (URL phone book)
-└── PROJECT_CONTEXT.md          # Local-only maintainer notes
-```
-
-## License
-
-MIT
+### Future Improvement Roadmap
+If you are looking to contribute to the platform, here are the highest-impact areas for optimization:
+1. **AI SDK Streaming:** The `/api/generate` route currently blocks until the full response is ready. Migrating to the Vercel AI SDK (`streamText`) would massively reduce perceived latency.
+2. **Parallel LLM Execution:** The generation route currently handles *both* Prompt Formatting and Model Routing in a single LLM call. Splitting these into `Promise.all()` parallel executions would halve the generation time.
+3. **Advanced Web Scraping:** The `/api/extract` Jina Reader fallback could be upgraded to integrate with Firecrawl or a dedicated headless browser service for scraping behind logins.
+4. **Account Sync:** The current history uses `localStorage`. Migrating to a lightweight Postgres DB (e.g., Neon or Turso) with Auth.js would allow cross-device sync.
