@@ -348,7 +348,11 @@ async function callLLMWithFallback(systemPrompt: string, userContent: string, ch
 // ─── Response Parsing ──────────────────────────────────────────────────────────
 
 function parseAndResolve(content: string): DispatcherResponse {
-  const cleanContent = content.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const cleanContent = content
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
   const parsed = JSON.parse(cleanContent) as unknown;
 
   if (!isRecord(parsed) || typeof parsed.optimized_prompt !== "string" || !parsed.optimized_prompt.trim()) {

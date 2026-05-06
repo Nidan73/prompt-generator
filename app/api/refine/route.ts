@@ -58,8 +58,9 @@ export async function POST(request: NextRequest) {
     const userContent = `EXISTING PROMPT:\n${currentPrompt.slice(0, 6000)}\n\nMODIFICATION REQUESTED:\n${instruction.slice(0, 500)}`;
     const refined = await callLLMWithFallback(SYSTEM_PROMPT, userContent, getRotatedChain("refine", REFINE_POOL));
 
-    // Strip any accidental markdown wrapping
+    // Strip any accidental markdown wrapping and reasoning tags from thinking models
     const cleanRefined = refined
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .replace(/^```(?:text|markdown)?\n?/i, "")
       .replace(/\n?```$/i, "")
       .trim();

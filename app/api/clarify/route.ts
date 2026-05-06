@@ -112,8 +112,9 @@ export async function POST(request: NextRequest) {
     const userContent = `Create guided-mode clarification questions for this rough prompt:\n${userPrompt}`;
     let content = await callLLMWithFallback(SYSTEM_PROMPT, userContent, getRotatedChain("clarify", CLARIFY_POOL));
 
-    // Aggressive regex to strip any markdown hallucinations before parsing
+    // Aggressive regex to strip any markdown hallucinations and reasoning tags before parsing
     content = content
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim();
