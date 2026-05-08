@@ -6,9 +6,9 @@ import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   classifyError,
   getClientIdentifier,
-  logApiEvent,
   rateLimitHeaders,
   retryAfterSeconds,
+  trackApiEvent,
 } from "@/lib/api-observability";
 import {
   REFINE_POOL,
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
   if (!limit.success) {
     const retryAfter = retryAfterSeconds(limit.reset);
-    logApiEvent({
+    await trackApiEvent({
       route: "refine",
       event: "rate_limited",
       status: 429,
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseRequestBody(request, RefineRequestSchema);
   if (parsed.error) {
-    logApiEvent({
+    await trackApiEvent({
       route: "refine",
       event: "validation_failed",
       status: parsed.error.status,
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         });
 
         recordProviderSuccess("refine", provider.name, Date.now() - providerStartedAt);
-        logApiEvent({
+        await trackApiEvent({
           route: "refine",
           event: "provider_accepted",
           status: 200,
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
         lastError = error;
         fallbackCount += 1;
         recordProviderFailure("refine", provider.name);
-        logApiEvent({
+        await trackApiEvent({
           route: "refine",
           event: "provider_fallback",
           status: 502,
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
 
     throw lastError;
   } catch (error) {
-    logApiEvent({
+    await trackApiEvent({
       route: "refine",
       event: "failed",
       status: 500,

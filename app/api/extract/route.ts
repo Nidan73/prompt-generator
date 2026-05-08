@@ -4,9 +4,9 @@ import { Redis } from "@upstash/redis";
 import { ExtractRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   getClientIdentifier,
-  logApiEvent,
   rateLimitHeaders,
   retryAfterSeconds,
+  trackApiEvent,
 } from "@/lib/api-observability";
 
 export const runtime = "edge";
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
   if (!limit.success) {
     const retryAfter = retryAfterSeconds(limit.reset);
-    logApiEvent({
+    await trackApiEvent({
       route: "extract",
       event: "rate_limited",
       status: 429,
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseRequestBody(request, ExtractRequestSchema);
   if (parsed.error) {
-    logApiEvent({
+    await trackApiEvent({
       route: "extract",
       event: "validation_failed",
       status: parsed.error.status,
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   const blockedReason = getBlockedUrlReason(url);
 
   if (blockedReason) {
-    logApiEvent({
+    await trackApiEvent({
       route: "extract",
       event: "blocked_url",
       status: 400,
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     const result = (await tryJinaReader(url)) ?? (await tryDirectFetch(url));
 
     if (result) {
-      logApiEvent({
+      await trackApiEvent({
         route: "extract",
         event: "succeeded",
         status: 200,
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    logApiEvent({
+    await trackApiEvent({
       route: "extract",
       event: "no_content",
       status: 422,
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   } catch (error) {
-    logApiEvent({
+    await trackApiEvent({
       route: "extract",
       event: "failed",
       status: 500,

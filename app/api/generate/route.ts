@@ -11,9 +11,9 @@ import { buildRegistryBlock, getLiveModelLandscape } from "@/lib/ai-catalog";
 import {
   classifyError,
   getClientIdentifier,
-  logApiEvent,
   rateLimitHeaders,
   retryAfterSeconds,
+  trackApiEvent,
 } from "@/lib/api-observability";
 import {
   GENERATE_POOL,
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     if (!success) {
       const retryAfter = retryAfterSeconds(reset);
-      logApiEvent({
+      await trackApiEvent({
         route: "generate",
         event: "rate_limited",
         status: 429,
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
 
     const parsed = await parseRequestBody(request, GenerateRequestSchema);
     if (parsed.error) {
-      logApiEvent({
+      await trackApiEvent({
         route: "generate",
         event: "validation_failed",
         status: parsed.error.status,
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         });
 
         recordProviderSuccess("generate", provider.name, Date.now() - providerStartedAt);
-        logApiEvent({
+        await trackApiEvent({
           route: "generate",
           event: "provider_accepted",
           status: 200,
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
         lastError = error;
         fallbackCount += 1;
         recordProviderFailure("generate", provider.name);
-        logApiEvent({
+        await trackApiEvent({
           route: "generate",
           event: "provider_fallback",
           status: 502,
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
 
     throw lastError;
   } catch (error) {
-    logApiEvent({
+    await trackApiEvent({
       route: "generate",
       event: "failed",
       status: 500,

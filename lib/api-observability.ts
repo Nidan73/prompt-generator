@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { Redis } from "@upstash/redis";
 
 type RateLimitResult = {
   limit: number;
@@ -6,7 +7,7 @@ type RateLimitResult = {
   reset: number;
 };
 
-type ApiLogEvent = {
+export type ApiLogEvent = {
   route: string;
   event: string;
   status?: number;
@@ -18,6 +19,20 @@ type ApiLogEvent = {
   errorType?: string;
   details?: Record<string, boolean | number | string | null | undefined>;
 };
+
+let metricsRedis: Redis | null | undefined;
+
+function getMetricsRedis() {
+  if (metricsRedis !== undefined) return metricsRedis;
+
+  try {
+    metricsRedis = Redis.fromEnv();
+  } catch {
+    metricsRedis = null;
+  }
+
+  return metricsRedis;
+}
 
 export function getClientIdentifier(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -66,4 +81,79 @@ export function logApiEvent(event: ApiLogEvent) {
   }
 
   console.info(line);
+}
+
+export async function trackApiEvent(event: ApiLogEvent) {
+  logApiEvent(event);
+  await recordUsageCounters(event);
+}
+
+async function recordUsageCounters(event: ApiLogEvent) {
+  const redis = getMetricsRedis();
+  if (!redis) return;
+
+  const activeRedis = redis;
+  const date = new Date().toISOString().slice(0, 10);
+  const base = `btq:metrics:${date}:${event.route}`;
+  const ttlSeconds = 60 * 60 * 24 * 14;
+  const keysToExpire = new Set<string>();
+  const pipeline = activeRedis.pipeline();
+
+  function incr(key: string, by = 1) {
+    keysToExpire.add(key);
+    if (by === 1) {
+      pipeline.incr(key);
+      return;
+    }
+
+    pipeline.incrby(key, by);
+  }
+
+  incr(`${base}:events`);
+  incr(`${base}:event:${slug(event.event)}`);
+
+  if (event.status) {
+    incr(`${base}:status:${event.status}`);
+
+    if (event.status >= 200 && event.status < 400) incr(`${base}:success`);
+    if (event.status >= 400) incr(`${base}:error`);
+  }
+
+  if (event.provider) {
+    incr(`${base}:provider:${slug(event.provider)}:${slug(event.event)}`);
+  }
+
+  if (event.errorType) {
+    incr(`${base}:error_type:${slug(event.errorType)}`);
+  }
+
+  if (typeof event.inputChars === "number" && event.inputChars > 0) {
+    incr(`${base}:input_chars`, event.inputChars);
+  }
+
+  if (typeof event.fallbackCount === "number" && event.fallbackCount > 0) {
+    incr(`${base}:fallback_count`, event.fallbackCount);
+  }
+
+  try {
+    for (const key of keysToExpire) {
+      pipeline.expire(key, ttlSeconds);
+    }
+
+    await pipeline.exec();
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        timestamp: new Date().toISOString(),
+        route: event.route,
+        event: "metrics_record_failed",
+        errorType: classifyError(error),
+      }),
+    );
+  }
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }

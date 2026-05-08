@@ -73,8 +73,8 @@ Generated prompts can be refined with the streaming "Tweak It" editor, copied as
 - **Upstash Redis Rate Limiting:** Enforces a sliding-window limit (50 generations per user per day) to prevent API abuse.
 - **Input Defense:** Generation inputs are capped at 4,000 characters, clarification payloads are bounded, and refinement inputs are capped separately to protect quotas.
 - **Safe URL Extraction:** URL reads block private/internal hosts, enforce fetch timeouts, reject oversized responses, and only process text-like content.
-- **Production Telemetry:** API routes emit structured logs for route, provider, latency, fallback count, and safe input-size metadata without logging full prompts.
-- **Health Endpoint:** `/api/health` reports required env readiness, provider-pool status, and model-landscape cache state.
+- **Production Telemetry:** API routes emit structured logs and daily Upstash counters for route events, statuses, fallback pressure, provider usage, and safe input-size totals without logging full prompts.
+- **Health Endpoint:** `/api/health` returns a sanitized public readiness summary only; it does not expose provider names, key presence, model inventory, or cache internals.
 - **CI Smoke Checks:** GitHub Actions run lint, build, and mocked Playwright E2E on pushes and pull requests.
 - **Vercel Edge Runtime:** All API routes run on the Edge for global low-latency and zero cold starts.
 
@@ -111,6 +111,8 @@ npm run lint
 npm run build
 npm run test:e2e
 ```
+
+Operational counters are stored in Upstash Redis with daily keys like `btq:metrics:YYYY-MM-DD:<route>:...` and a 14-day TTL.
 
 ---
 

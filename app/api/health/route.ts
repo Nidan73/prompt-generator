@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getModelLandscapeCacheState } from "@/lib/ai-catalog";
 import {
   CLARIFY_POOL,
   GENERATE_POOL,
@@ -26,16 +25,12 @@ export function GET() {
       status: ready ? "ok" : "degraded",
       timestamp: new Date().toISOString(),
       runtime: "edge",
-      dependencies: {
-        upstashRedis: upstashConfigured,
-        providerKeys: {
-          groq: Boolean(process.env.GROQ_API_KEY),
-          gemini: Boolean(process.env.GEMINI_API_KEY),
-          openrouter: Boolean(process.env.OPENROUTER_API_KEY),
-        },
+      checks: {
+        rateLimitStore: upstashConfigured ? "ok" : "missing",
+        generation: poolStatus(pools.generate),
+        guidedMode: poolStatus(pools.clarify),
+        refinement: poolStatus(pools.refine),
       },
-      modelLandscape: getModelLandscapeCacheState(),
-      pools,
     },
     {
       status: ready ? 200 : 503,
@@ -44,4 +39,8 @@ export function GET() {
       },
     },
   );
+}
+
+function poolStatus(pool: ReturnType<typeof getPoolRuntimeStatus>) {
+  return pool.ready > 0 ? "ok" : "degraded";
 }

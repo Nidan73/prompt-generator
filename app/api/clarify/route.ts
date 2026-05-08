@@ -5,9 +5,9 @@ import { ClarifyRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   classifyError,
   getClientIdentifier,
-  logApiEvent,
   rateLimitHeaders,
   retryAfterSeconds,
+  trackApiEvent,
 } from "@/lib/api-observability";
 import {
   CLARIFY_POOL,
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
   if (!limit.success) {
     const retryAfter = retryAfterSeconds(limit.reset);
-    logApiEvent({
+    await trackApiEvent({
       route: "clarify",
       event: "rate_limited",
       status: 429,
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseRequestBody(request, ClarifyRequestSchema);
   if (parsed.error) {
-    logApiEvent({
+    await trackApiEvent({
       route: "clarify",
       event: "validation_failed",
       status: parsed.error.status,
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         });
 
         recordProviderSuccess("clarify", provider.name, Date.now() - providerStartedAt);
-        logApiEvent({
+        await trackApiEvent({
           route: "clarify",
           event: "provider_succeeded",
           status: 200,
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
         lastError = error;
         fallbackCount += 1;
         recordProviderFailure("clarify", provider.name);
-        logApiEvent({
+        await trackApiEvent({
           route: "clarify",
           event: "provider_fallback",
           status: 502,
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
 
     throw lastError;
   } catch (error) {
-    logApiEvent({
+    await trackApiEvent({
       route: "clarify",
       event: "failed",
       status: 500,
