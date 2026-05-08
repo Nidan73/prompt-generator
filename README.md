@@ -16,12 +16,16 @@ Bhai Thik Kor is a high-performance prompt engineering workspace designed for th
 ## 🚀 High-Performance Architecture
 
 ### 1. Zero-Latency Streaming (`useObject` & `useCompletion`)
-The application has been fully migrated to the **Vercel AI SDK**. 
+
+The application has been fully migrated to the **Vercel AI SDK**.
+
 - **Real-Time JSON:** The `/api/generate` route uses `streamObject` to stream structured JSON token-by-token. The UI renders the "Optimized Prompt" and "Model Recommendations" as they are being typed by the AI.
 - **Fluid Refinement:** The `/api/refine` route uses `streamText` for instant "Tweak It" responses, providing a smooth, typewriter-like experience.
 
 ### 2. Multiplexed Provider Pool (The "Free-Tier Cloud")
+
 To overcome the strict rate limits of free AI APIs, we built a **Round-Robin Load Balancer** (`lib/provider-pool.ts`).
+
 - **Task-Specific Pools:** Clarification and refinement use broad speed-first pools; generation is constrained to models/endpoints that support strict structured JSON output.
 - **Live-Smoke Verified Generation:** The generation pool currently includes Groq GPT-OSS structured-output models plus Gemini/OpenRouter structured-output fallbacks.
 - **Fail-Fast Resilience:** If a provider returns a `429 (Rate Limit)` or `500` error, the backend instantly (within 50ms) cascades to the next model in the pool.
@@ -29,7 +33,9 @@ To overcome the strict rate limits of free AI APIs, we built a **Round-Robin Loa
 - **Capacity:** Adding more provider keys increases available free-tier capacity without changing application code.
 
 ### 3. Live Model-Aware Routing
+
 The routing layer combines a verified platform registry with a cached OpenRouter model landscape.
+
 - **Verified URLs:** The LLM returns `platform_id` values, and the client resolves them against local platform URLs.
 - **Fresh Recommendations:** `/api/generate` injects the current model landscape so routing can prefer newer suitable models instead of stale hardcoded picks.
 - **Low-Latency Cache:** The landscape uses a short in-memory cache plus Vercel/Next fetch caching to avoid calling OpenRouter on every generation request.
@@ -40,19 +46,24 @@ The routing layer combines a verified platform registry with a cached OpenRouter
 ## 🏛️ Core Workflow
 
 ### 1. URL Context Extraction
+
 Paste a URL (e.g., a documentation page or a GitHub repo) and the system automatically grounds the AI in that content using **Jina Reader** and aggressive HTML stripping.
 
 ### 2. Intelligent Guided Mode
+
 Don't know what's missing? Click "Guide Me". The AI dynamically deduces your task's domain (Code, Video, Image, etc.) and generates 3 high-impact multiple-choice questions to fill the gaps.
 
 ### 3. Switchboard Prompt Logic
+
 The engine detects your intent and selects the perfect framework:
+
 - **Code:** XML-tagged structured reasoning.
 - **Marketing:** AIDA / PAS frameworks.
 - **Creative:** Premise/Tone/Style matrices.
 - **General:** The elite RTCFC (Role, Task, Context, Format, Constraints) framework.
 
 ### 4. Tweak, Share, and Reuse
+
 Generated prompts can be refined with the streaming "Tweak It" editor, copied as chat/API-ready output, shared through compressed URL hashes, and restored from local browser history.
 
 ---
@@ -72,6 +83,7 @@ Generated prompts can be refined with the streaming "Tweak It" editor, copied as
 ## 🛠️ Developer Setup
 
 ### Environment Variables
+
 Create a `.env.local` file with the following keys. You only need one LLM key to start; adding more enables the load balancer.
 
 ```env
@@ -86,12 +98,14 @@ OPENROUTER_API_KEY="sk-or-v1-..."
 ```
 
 ### Installation
+
 ```bash
 npm install
 npm run dev
 ```
 
 ### Verification
+
 ```bash
 npm run lint
 npm run build
@@ -101,6 +115,7 @@ npm run test:e2e
 ---
 
 ## 🗺️ Roadmap
+
 - [x] **Streaming UI:** Full migration to Vercel AI SDK for real-time feedback.
 - [x] **Provider Multiplexing:** Round-Robin load balancing with task-specific provider pools.
 - [x] **Live Model Routing:** Cached model landscape plus verified platform resolution.
@@ -108,3 +123,5 @@ npm run test:e2e
 - [ ] **Multi-Modal Support:** Visual prompting for GPT-4o-vision/Gemini Pro Vision.
 - [ ] **Advanced Prompt Versioning:** Diffing between "Version A" and "Version B" of an optimized prompt.
 - [ ] **Community Hub:** Share optimized prompts to a public gallery.
+
+## 🤝 Contributing
