@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import { type ProviderConfig, REFINE_POOL, getRotatedChain } from "@/lib/provider-pool";
+import { streamText } from "ai";
 
 export const runtime = "edge";
 
@@ -53,28 +53,36 @@ export async function POST(request: NextRequest) {
   if (parsed.error) return parsed.error;
 
   const { currentPrompt, instruction } = parsed.data;
+  const userContent = `EXISTING PROMPT:\n${currentPrompt.slice(0, 2000)}\n\nMODIFICATION REQUESTED:\n${instruction.slice(0, 500)}`;
 
   try {
-    const userContent = `EXISTING PROMPT:\n${currentPrompt.slice(0, 6000)}\n\nMODIFICATION REQUESTED:\n${instruction.slice(0, 500)}`;
-    const refined = await callLLMWithFallback(SYSTEM_PROMPT, userContent, getRotatedChain("refine", REFINE_POOL));
+    const chain = getRotatedChain("refine", REFINE_POOL);
+    let lastError: unknown = new Error("No API keys configured or all providers failed.");
 
-    // Strip any accidental markdown wrapping and reasoning tags from thinking models
-    const cleanRefined = refined
-      .replace(/<think>[\s\S]*?<\/think>/gi, "")
-      .replace(/^```(?:text|markdown)?\n?/i, "")
-      .replace(/\n?```$/i, "")
-      .trim();
+    for (const provider of chain) {
+      try {
+        const result = await streamText({
+          model: provider.sdkModel,
+          system: SYSTEM_PROMPT,
+          prompt: userContent,
+          maxRetries: 0, // Disable internal retries to fail-fast on 429s
+        });
 
-    return NextResponse.json(
-      { refined_prompt: cleanRefined },
-      {
-        headers: {
-          "X-RateLimit-Limit": String(limit.limit),
-          "X-RateLimit-Remaining": String(limit.remaining),
-          "X-RateLimit-Reset": String(limit.reset),
-        },
-      },
-    );
+        return result.toTextStreamResponse({
+          headers: {
+            "X-RateLimit-Limit": String(limit.limit),
+            "X-RateLimit-Remaining": String(limit.remaining),
+            "X-RateLimit-Reset": String(limit.reset),
+            "X-Provider-Name": provider.name,
+          }
+        });
+      } catch (error) {
+        lastError = error;
+        console.warn(`Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    throw lastError;
   } catch (error) {
     console.error("Prompt refinement failed", error);
     return NextResponse.json({ error: "Unable to refine the prompt right now." }, { status: 500 });
@@ -88,54 +96,4 @@ function getClientIdentifier(request: NextRequest) {
   const realIp = request.headers.get("x-real-ip");
   const cloudflareIp = request.headers.get("cf-connecting-ip");
   return forwardedFor || realIp || cloudflareIp || "anonymous";
-}
-
-async function callLLMWithFallback(
-  systemPrompt: string,
-  userContent: string,
-  chain: ProviderConfig[],
-): Promise<string> {
-  let lastError: unknown = new Error("No API keys configured or all providers failed.");
-
-  for (const provider of chain) {
-    if (!provider.apiKey) continue;
-
-    try {
-      const response = await fetch(provider.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${provider.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: provider.model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userContent },
-          ],
-          temperature: 0.25,
-          max_completion_tokens: 3200,
-        }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(`Provider ${provider.name} failed with status ${response.status}`);
-        }
-        const errorText = await response.text();
-        throw new Error(`Fatal error from ${provider.name}: ${response.status} ${errorText}`);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-
-      if (!content) throw new Error(`${provider.name} returned an empty completion.`);
-      return content;
-    } catch (error) {
-      lastError = error;
-      console.warn(`Refine Fallback triggered: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  throw lastError;
 }

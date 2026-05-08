@@ -9,6 +9,27 @@ import { z } from "zod";
 
 // ─── /api/generate ─────────────────────────────────────────────────────────────
 
+export const GenerateSchemaObject = z.object({
+  optimized_prompt: z.string().describe("The highly detailed, formatted expert prompt"),
+  routing: z.object({
+    open_source: z.object({
+      platform_id: z.string(),
+      model_name: z.string(),
+      reasoning: z.string(),
+    }).optional(),
+    freemium: z.object({
+      platform_id: z.string(),
+      model_name: z.string(),
+      reasoning: z.string(),
+    }).optional(),
+    premium: z.object({
+      platform_id: z.string(),
+      model_name: z.string(),
+      reasoning: z.string(),
+    }).optional(),
+  }).optional().describe("Routing recommendations for different model tiers")
+});
+
 export const GenerateRequestSchema = z.object({
   prompt: z
     .string({ message: "A non-empty prompt is required." })

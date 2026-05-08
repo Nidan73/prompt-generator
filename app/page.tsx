@@ -6,6 +6,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/components/theme-provider";
 import { saveToHistory, getHistory, clearHistory, type HistoryEntry } from "@/lib/prompt-history";
 import { encodePromptToHash, decodePromptFromHash } from "@/lib/share-link";
+import { GenerateSchemaObject } from "@/lib/api-schemas";
+import { resolveRecommendations } from "@/lib/ai-catalog";
+import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
 import clsx from "clsx";
 import { twMerge } from "tailwind-merge";
 import {
@@ -101,7 +104,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<RecommendationTier>("open_source");
   const [isGuidedModeEnabled, setIsGuidedModeEnabled] = useState(false);
   const [isClarifying, setIsClarifying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingManual, setIsLoadingManual] = useState(false);
   const [cooldownTimer, setCooldownTimer] = useState(0);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
@@ -116,7 +119,6 @@ export default function Home() {
 
   // Feature: Tweak It
   const [refineInput, setRefineInput] = useState("");
-  const [isRefining, setIsRefining] = useState(false);
 
   // Feature: Shared Prompt (read-only view from URL hash)
   const [sharedPrompt, setSharedPrompt] = useState<string | null>(null);
@@ -146,6 +148,86 @@ export default function Home() {
       })),
     [answers, questions],
   );
+
+  // ─── AI SDK STREAMING HOOKS ──────────────────────────────────────────────────
+  
+  const { 
+    object: generateObject, 
+    submit: submitGenerate, 
+    isLoading: isGeneratingStream,
+  } = useObject({
+    api: "/api/generate",
+    schema: GenerateSchemaObject,
+    onFinish: ({ object }) => {
+      if (object?.optimized_prompt && object?.routing) {
+        const resolvedRecs = resolveRecommendations(
+          object.routing as Record<string, { platform_id: string; model_name: string; reasoning: string }>
+        );
+        saveToHistory({
+          inputPrompt: trimmedPrompt,
+          optimizedPrompt: object.optimized_prompt,
+          recommendations: resolvedRecs,
+        });
+        setHistory(getHistory());
+      }
+    },
+    onError: (err) => {
+      setError("Generation failed. Give it another run in a moment.");
+    }
+  });
+
+  const { 
+    completion: refineCompletion, 
+    complete: submitRefine, 
+    isLoading: isRefiningStream 
+  } = useCompletion({
+    api: "/api/refine",
+    onFinish: (prompt, completion) => {
+      // Once finished streaming, update the persistent result object
+      setResult((prev) => prev ? { ...prev, optimized_prompt: completion } : prev);
+      if (result) {
+        saveToHistory({
+          inputPrompt: trimmedPrompt,
+          optimizedPrompt: completion,
+          recommendations: result.recommendations,
+        });
+        setHistory(getHistory());
+      }
+      setRefineInput("");
+    },
+    onError: (err) => {
+      setError("Refinement failed. Try again in a moment.");
+    }
+  });
+
+  // Synchronize streaming object to standard `result` state
+  useEffect(() => {
+    if (generateObject) {
+      if (generateObject.routing) {
+        const resolvedRecs = resolveRecommendations(
+          generateObject.routing as Record<string, { platform_id: string; model_name: string; reasoning: string }>
+        );
+        setResult({
+          optimized_prompt: generateObject.optimized_prompt || "",
+          recommendations: resolvedRecs,
+        });
+      } else {
+        setResult(generateObject as DispatcherResponse);
+      }
+    }
+  }, [generateObject]);
+
+  // Synchronize refining text stream to standard `result` state temporarily
+  useEffect(() => {
+    if (isRefiningStream && refineCompletion && result) {
+      setResult({ ...result, optimized_prompt: refineCompletion });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refineCompletion, isRefiningStream]);
+
+  const isCurrentlyLoading = isLoadingManual || isGeneratingStream || isRefiningStream;
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!isCoolingDown) {
@@ -190,7 +272,7 @@ export default function Home() {
       // Ctrl/Cmd + Enter → Generate prompt
       if (e.key === "Enter") {
         e.preventDefault();
-        if (hasEnoughContext && !isLoading && !isCoolingDown) {
+        if (hasEnoughContext && !isCurrentlyLoading && !isCoolingDown) {
           if (isGuidedModeEnabled && !isGuided) {
             requestClarifications();
           } else {
@@ -227,7 +309,7 @@ export default function Home() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasEnoughContext, isLoading, isCoolingDown, isGuidedModeEnabled, isGuided, result, outputMode]);
+  }, [hasEnoughContext, isCurrentlyLoading, isCoolingDown, isGuidedModeEnabled, isGuided, result, outputMode]);
 
   async function requestClarifications() {
     if (!hasEnoughContext || isCoolingDown) {
@@ -263,15 +345,16 @@ export default function Home() {
   }
 
   async function generatePrompt() {
-    if (!hasEnoughContext || isCoolingDown) {
+    if (!hasEnoughContext || isCoolingDown || isCurrentlyLoading) {
       return;
     }
 
-    setIsLoading(true);
+    setIsLoadingManual(true);
     setError("");
     setCopied("");
     setOutputMode("chat");
     setRefineInput("");
+    setResult(null); // Clear previous result before streaming starts
 
     try {
       // URL Context Injection: extract page content if a URL is detected
@@ -301,80 +384,34 @@ export default function Home() {
         ? [...clarifications, { question: "URL Context (auto-extracted)", answer: urlContext }]
         : clarifications;
 
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: trimmedPrompt,
-          clarifications: enrichedClarifications,
-        }),
+      // Submit to the Vercel AI SDK hook
+      submitGenerate({
+        prompt: trimmedPrompt,
+        clarifications: enrichedClarifications,
       });
 
-      const payload = await response.json();
-
-      if (!response.ok) {
-        handleApiError(response.status, payload);
-        return;
-      }
-
-      const generatedResult = payload as DispatcherResponse;
-      setResult(generatedResult);
       setActiveTab("open_source");
-
-      // Save to local history
-      saveToHistory({
-        inputPrompt: trimmedPrompt,
-        optimizedPrompt: generatedResult.optimized_prompt,
-        recommendations: generatedResult.recommendations,
-      });
-      setHistory(getHistory());
     } catch {
       setError("Generation failed. Give it another run in a moment.");
     } finally {
-      setIsLoading(false);
+      setIsLoadingManual(false);
     }
   }
 
   async function refinePrompt() {
-    if (!result || !refineInput.trim() || isRefining) return;
+    if (!result || !refineInput.trim() || isRefiningStream) return;
 
-    setIsRefining(true);
     setError("");
 
     try {
-      const response = await fetch("/api/refine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      submitRefine(refineInput.trim(), {
+        body: {
           currentPrompt: result.optimized_prompt,
           instruction: refineInput.trim(),
-        }),
+        }
       });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        handleApiError(response.status, payload);
-        return;
-      }
-
-      // Update the result in-place
-      setResult((prev) =>
-        prev ? { ...prev, optimized_prompt: payload.refined_prompt } : prev,
-      );
-      setRefineInput("");
-
-      // Update history with the refined version
-      saveToHistory({
-        inputPrompt: trimmedPrompt,
-        optimizedPrompt: payload.refined_prompt,
-        recommendations: result.recommendations,
-      });
-      setHistory(getHistory());
     } catch {
       setError("Refinement failed. Try again in a moment.");
-    } finally {
-      setIsRefining(false);
     }
   }
 
@@ -758,7 +795,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={requestClarifications}
-                  disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
+                  disabled={!hasEnoughContext || isClarifying || isCurrentlyLoading || isCoolingDown}
                   className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-base font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:-translate-y-0.5 hover:bg-blue-500 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:shadow-blue-900/20"
                 >
                   {isClarifying ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
@@ -771,14 +808,14 @@ export default function Home() {
                       key="generate"
                       type="button"
                       onClick={generatePrompt}
-                      disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
+                      disabled={!hasEnoughContext || isClarifying || isCurrentlyLoading || isCoolingDown}
                       initial={{ opacity: 0, y: 8, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -8, scale: 0.98 }}
                       transition={{ duration: 0.22, type: "spring", stiffness: 400, damping: 30 }}
                       className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-base font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
                     >
-                      {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                      {isCurrentlyLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                       {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
                     </motion.button>
                   ) : null}
@@ -915,10 +952,10 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={generatePrompt}
-                      disabled={!hasEnoughContext || isClarifying || isLoading || isCoolingDown}
+                      disabled={!hasEnoughContext || isClarifying || isCurrentlyLoading || isCoolingDown}
                       className="inline-flex h-12 w-full sm:w-auto px-8 items-center justify-center gap-2 rounded-2xl bg-slate-950 text-sm font-semibold text-white shadow-lg shadow-slate-950/15 transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-slate-400 dark:bg-white dark:text-slate-950 dark:shadow-white/10 dark:hover:bg-slate-200"
                     >
-                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {isCurrentlyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                       {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
                     </button>
                   </motion.div>
@@ -930,7 +967,7 @@ export default function Home() {
           </AnimatePresence>
 
           <AnimatePresence>
-            {(isLoading || result) && (
+            {(isCurrentlyLoading || result) && (
               <motion.section
                 variants={fadeUp}
                 initial="initial"
@@ -1012,7 +1049,7 @@ export default function Home() {
 
                   {/* Prompt Output */}
                   <div className="mt-5 min-h-[340px] overflow-auto rounded-2xl border border-black/[0.05] bg-black/[0.02] p-5 dark:border-white/[0.08] dark:bg-black/60">
-                    {isLoading ? (
+                    {isCurrentlyLoading ? (
                       <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 text-center text-slate-500 dark:text-slate-400">
                         <RefreshCw className="h-7 w-7 animate-spin text-blue-500" />
                         <p className="font-medium">Generating a structured RTCFC prompt.</p>
@@ -1030,7 +1067,7 @@ export default function Home() {
                   </div>
 
                   {/* Tweak It — Refinement Input */}
-                  {result && !isLoading && (
+                  {result && !isCurrentlyLoading && (
                     <div className="mt-4 flex items-center gap-2">
                       <input
                         type="text"
@@ -1043,10 +1080,10 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={refinePrompt}
-                        disabled={!refineInput.trim() || isRefining}
+                        disabled={!refineInput.trim() || isRefiningStream}
                         className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
                       >
-                        {isRefining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        {isRefiningStream ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       </button>
                     </div>
                   )}
@@ -1070,7 +1107,7 @@ export default function Home() {
                           type="button"
                           key={tab.id}
                           onClick={() => setActiveTab(tab.id)}
-                          disabled={!result || isLoading}
+                          disabled={!result || isCurrentlyLoading}
                           className={cn(
                             "rounded-2xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
                             isActive
@@ -1107,7 +1144,7 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => copyAndOpen(activeRecommendation)}
-                          disabled={isLoading}
+                          disabled={isCurrentlyLoading}
                           className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                         >
                           {copied === activeRecommendation.model_name ? "Copied Prompt" : "Copy & Open"}
