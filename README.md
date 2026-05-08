@@ -9,7 +9,7 @@ Live : [https://bhaithikkor.vercel.app/](https://bhaithikkor.vercel.app/)
 ![Vercel AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-Streaming-blue)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss&logoColor=white)
 
-Bhai Thik Kor is a high-performance prompt engineering workspace designed for the "Zero Latency" era. It transforms low-effort user input into structured, professional prompts using real-time JSON streaming and an elastic, load-balanced backend that leverages over **16 free-tier AI models** simultaneously.
+Bhai Thik Kor is a high-performance prompt engineering workspace designed for the "Zero Latency" era. It transforms low-effort user input into structured, professional prompts using real-time JSON streaming and elastic provider pools across Groq, Gemini, and OpenRouter.
 
 ---
 
@@ -22,14 +22,16 @@ The application has been fully migrated to the **Vercel AI SDK**.
 
 ### 2. Multiplexed Provider Pool (The "Free-Tier Cloud")
 To overcome the strict rate limits of free AI APIs, we built a **Round-Robin Load Balancer** (`lib/provider-pool.ts`).
-- **16+ Models:** Every request cycles through a massive pool including **9 Groq models** (Llama 3.3, Qwen 3, Mixtral, Gemma 2), **4 Gemini models** (2.5 Flash, 3.1 Pro), and **3 OpenRouter models**.
+- **Task-Specific Pools:** Clarification and refinement use broad speed-first pools; generation is constrained to models/endpoints that support strict structured JSON output.
+- **Live-Smoke Verified Generation:** The generation pool currently includes Groq GPT-OSS structured-output models plus Gemini/OpenRouter structured-output fallbacks.
 - **Fail-Fast Resilience:** If a provider returns a `429 (Rate Limit)` or `500` error, the backend instantly (within 50ms) cascades to the next model in the pool.
-- **Capacity:** This architecture supports over **6,800 prompt generations per day** entirely for free.
+- **Capacity:** Adding more provider keys increases available free-tier capacity without changing application code.
 
-### 3. Prompt Abstraction & Token Optimization
-We utilize **Prompt Abstraction** to minimize cost and maximize speed.
-- Instead of sending 500-word "instruction manuals" on every request, we use high-density, anchor-based prompts that teach the LLM principles rather than hardcoded rules.
-- **Impact:** System prompt overhead has been reduced by **~80%**, saving hundreds of thousands of tokens per day.
+### 3. Live Model-Aware Routing
+The routing layer combines a verified platform registry with a daily cached OpenRouter model landscape.
+- **Verified URLs:** The LLM returns `platform_id` values, and the client resolves them against local platform URLs.
+- **Fresh Recommendations:** `/api/generate` injects the current model landscape so routing can prefer newer suitable models instead of stale hardcoded picks.
+- **Safe Fallbacks:** If live model data is unavailable, the app falls back to a static model landscape.
 
 ---
 
@@ -48,12 +50,15 @@ The engine detects your intent and selects the perfect framework:
 - **Creative:** Premise/Tone/Style matrices.
 - **General:** The elite RTCFC (Role, Task, Context, Format, Constraints) framework.
 
+### 4. Tweak, Share, and Reuse
+Generated prompts can be refined with the streaming "Tweak It" editor, copied as chat/API-ready output, shared through compressed URL hashes, and restored from local browser history.
+
 ---
 
 ## 🛡️ Reliability & Security
 
 - **Upstash Redis Rate Limiting:** Enforces a sliding-window limit (50 generations per user per day) to prevent API abuse.
-- **Input Defense:** All inputs are truncated at 2,000 characters to protect against "token-dumping" attacks and preserve daily quotas.
+- **Input Defense:** Generation inputs are capped at 4,000 characters and refinement inputs are capped separately to protect quotas.
 - **Vercel Edge Runtime:** All API routes run on the Edge for global low-latency and zero cold starts.
 
 ---
@@ -84,9 +89,9 @@ npm run dev
 
 ## 🗺️ Roadmap
 - [x] **Streaming UI:** Full migration to Vercel AI SDK for real-time feedback.
-- [x] **Provider Multiplexing:** Round-Robin load balancing across 16+ models.
-- [x] **Token Optimization:** Prompt abstraction to reduce burn rate.
+- [x] **Provider Multiplexing:** Round-Robin load balancing with task-specific provider pools.
+- [x] **Live Model Routing:** Daily cached model landscape plus verified platform resolution.
+- [x] **Local History & Sharing:** Browser-local prompt history and compressed share links.
 - [ ] **Multi-Modal Support:** Visual prompting for GPT-4o-vision/Gemini Pro Vision.
 - [ ] **Advanced Prompt Versioning:** Diffing between "Version A" and "Version B" of an optimized prompt.
 - [ ] **Community Hub:** Share optimized prompts to a public gallery.
- would allow cross-device sync.

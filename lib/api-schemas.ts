@@ -16,18 +16,18 @@ export const GenerateSchemaObject = z.object({
       platform_id: z.string(),
       model_name: z.string(),
       reasoning: z.string(),
-    }).optional(),
+    }),
     freemium: z.object({
       platform_id: z.string(),
       model_name: z.string(),
       reasoning: z.string(),
-    }).optional(),
+    }),
     premium: z.object({
       platform_id: z.string(),
       model_name: z.string(),
       reasoning: z.string(),
-    }).optional(),
-  }).optional().describe("Routing recommendations for different model tiers")
+    }),
+  }).describe("Routing recommendations for different model tiers")
 });
 
 export const GenerateRequestSchema = z.object({

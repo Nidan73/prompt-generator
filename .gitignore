@@ -18,6 +18,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# test artifacts
+test-results/
+playwright-report/
+
 # misc
 .DS_Store
 *.pem

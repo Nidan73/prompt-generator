@@ -54,6 +54,17 @@ type DispatcherResponse = {
   recommendations: Record<RecommendationTier, Recommendation>;
 };
 
+type RoutingPick = {
+  platform_id: string;
+  model_name: string;
+  reasoning: string;
+};
+
+type GenerateStreamObject = {
+  optimized_prompt?: string;
+  routing?: Record<string, RoutingPick>;
+};
+
 type ApiError = {
   error?: string;
   retryAfter?: number;
@@ -124,11 +135,14 @@ export default function Home() {
   const [sharedPrompt, setSharedPrompt] = useState<string | null>(null);
 
   // Feature: URL Context Injection
-  const [detectedUrl, setDetectedUrl] = useState<string | null>(null);
   const [extractedContext, setExtractedContext] = useState<string | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
 
   const trimmedPrompt = prompt.trim();
+  const detectedUrl = useMemo(() => {
+    const urlMatch = trimmedPrompt.match(/https?:\/\/[^\s]+/);
+    return urlMatch ? urlMatch[0] : null;
+  }, [trimmedPrompt]);
   const wordCount = trimmedPrompt ? trimmedPrompt.split(/\s+/).length : 0;
   const hasPrompt = trimmedPrompt.length > 0;
   const hasEnoughContext = wordCount >= 3;
@@ -159,19 +173,26 @@ export default function Home() {
     api: "/api/generate",
     schema: GenerateSchemaObject,
     onFinish: ({ object }) => {
-      if (object?.optimized_prompt && object?.routing) {
-        const resolvedRecs = resolveRecommendations(
-          object.routing as Record<string, { platform_id: string; model_name: string; reasoning: string }>
-        );
-        saveToHistory({
-          inputPrompt: trimmedPrompt,
-          optimizedPrompt: object.optimized_prompt,
-          recommendations: resolvedRecs,
-        });
-        setHistory(getHistory());
-      }
+      const optimizedPrompt = object?.optimized_prompt?.trim();
+      if (!optimizedPrompt) return;
+
+      const resolvedRecs = resolveRecommendations(
+        (object?.routing ?? {}) as Record<string, RoutingPick>,
+      );
+      const finalResult = {
+        optimized_prompt: optimizedPrompt,
+        recommendations: resolvedRecs,
+      };
+
+      setResult(finalResult);
+      saveToHistory({
+        inputPrompt: trimmedPrompt,
+        optimizedPrompt,
+        recommendations: resolvedRecs,
+      });
+      setHistory(getHistory());
     },
-    onError: (err) => {
+    onError: () => {
       setError("Generation failed. Give it another run in a moment.");
     }
   });
@@ -182,10 +203,11 @@ export default function Home() {
     isLoading: isRefiningStream 
   } = useCompletion({
     api: "/api/refine",
-    onFinish: (prompt, completion) => {
-      // Once finished streaming, update the persistent result object
-      setResult((prev) => prev ? { ...prev, optimized_prompt: completion } : prev);
+    streamProtocol: "text",
+    onFinish: (_prompt, completion) => {
       if (result) {
+        const finalResult = { ...result, optimized_prompt: completion };
+        setResult(finalResult);
         saveToHistory({
           inputPrompt: trimmedPrompt,
           optimizedPrompt: completion,
@@ -195,37 +217,28 @@ export default function Home() {
       }
       setRefineInput("");
     },
-    onError: (err) => {
+    onError: () => {
       setError("Refinement failed. Try again in a moment.");
     }
   });
 
-  // Synchronize streaming object to standard `result` state
-  useEffect(() => {
-    if (generateObject) {
-      if (generateObject.routing) {
-        const resolvedRecs = resolveRecommendations(
-          generateObject.routing as Record<string, { platform_id: string; model_name: string; reasoning: string }>
-        );
-        setResult({
-          optimized_prompt: generateObject.optimized_prompt || "",
-          recommendations: resolvedRecs,
-        });
-      } else {
-        setResult(generateObject as DispatcherResponse);
-      }
-    }
-  }, [generateObject]);
-
-  // Synchronize refining text stream to standard `result` state temporarily
-  useEffect(() => {
-    if (isRefiningStream && refineCompletion && result) {
-      setResult({ ...result, optimized_prompt: refineCompletion });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refineCompletion, isRefiningStream]);
-
   const isCurrentlyLoading = isLoadingManual || isGeneratingStream || isRefiningStream;
+  const generatedStreamObject = isGeneratingStream
+    ? (generateObject as GenerateStreamObject | null | undefined)
+    : null;
+  const generatedRecommendations = generatedStreamObject?.routing
+    ? resolveRecommendations(generatedStreamObject.routing)
+    : null;
+  const displayPrompt = isRefiningStream
+    ? refineCompletion || result?.optimized_prompt || ""
+    : generatedStreamObject?.optimized_prompt || result?.optimized_prompt || "";
+  const displayRecommendations = generatedRecommendations ?? result?.recommendations ?? null;
+  const displayResult = displayPrompt && displayRecommendations
+    ? {
+        optimized_prompt: displayPrompt,
+        recommendations: displayRecommendations,
+      }
+    : result;
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -243,25 +256,27 @@ export default function Home() {
 
   // Load history on mount
   useEffect(() => {
-    setHistory(getHistory());
+    const timeout = window.setTimeout(() => {
+      setHistory(getHistory());
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   // Decode shared prompt from URL hash on mount
   useEffect(() => {
-    const hash = window.location.hash;
-    const decoded = decodePromptFromHash(hash);
-    if (decoded) {
-      setSharedPrompt(decoded);
-      // Clean the hash from the URL without reload
-      window.history.replaceState(null, "", window.location.pathname);
-    }
-  }, []);
+    const timeout = window.setTimeout(() => {
+      const hash = window.location.hash;
+      const decoded = decodePromptFromHash(hash);
+      if (decoded) {
+        setSharedPrompt(decoded);
+        // Clean the hash from the URL without reload
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }, 0);
 
-  // Detect URLs in prompt input
-  useEffect(() => {
-    const urlMatch = trimmedPrompt.match(/https?:\/\/[^\s]+/);
-    setDetectedUrl(urlMatch ? urlMatch[0] : null);
-  }, [trimmedPrompt]);
+    return () => window.clearTimeout(timeout);
+  }, []);
 
   // Keyboard shortcuts for power users
   useEffect(() => {
@@ -499,14 +514,14 @@ export default function Home() {
     setOutputMode("chat");
   }
 
-  function getApiModeOutput(): string {
-    if (!result) return "";
-    const activeRec = result.recommendations[activeTab];
+  function getApiModeOutput(source: DispatcherResponse | null = result): string {
+    if (!source) return "";
+    const activeRec = source.recommendations[activeTab];
     return JSON.stringify(
       {
         model: activeRec?.model_name || "recommended-model",
         messages: [
-          { role: "system", content: result.optimized_prompt },
+          { role: "system", content: source.optimized_prompt },
           { role: "user", content: "Execute the task described above." },
         ],
       },
@@ -515,7 +530,7 @@ export default function Home() {
     );
   }
 
-  const activeRecommendation = result?.recommendations[activeTab];
+  const activeRecommendation = displayRecommendations?.[activeTab];
 
   return (
     <main className="min-h-screen overflow-x-hidden transition-colors">
@@ -967,7 +982,7 @@ export default function Home() {
           </AnimatePresence>
 
           <AnimatePresence>
-            {(isCurrentlyLoading || result) && (
+            {(isCurrentlyLoading || displayResult) && (
               <motion.section
                 variants={fadeUp}
                 initial="initial"
@@ -1049,20 +1064,22 @@ export default function Home() {
 
                   {/* Prompt Output */}
                   <div className="mt-5 min-h-[340px] overflow-auto rounded-2xl border border-black/[0.05] bg-black/[0.02] p-5 dark:border-white/[0.08] dark:bg-black/60">
-                    {isCurrentlyLoading ? (
+                    {displayPrompt ? (
+                      <pre className={cn(
+                        "whitespace-pre-wrap break-words font-sans text-sm leading-relaxed",
+                        outputMode === "api" && displayResult && !isCurrentlyLoading
+                          ? "font-mono text-emerald-700 dark:text-emerald-300"
+                          : "text-slate-800 dark:text-slate-200"
+                      )}>
+                        {outputMode === "api" && displayResult && !isCurrentlyLoading
+                          ? getApiModeOutput(displayResult)
+                          : displayPrompt}
+                      </pre>
+                    ) : isCurrentlyLoading ? (
                       <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 text-center text-slate-500 dark:text-slate-400">
                         <RefreshCw className="h-7 w-7 animate-spin text-blue-500" />
                         <p className="font-medium">Generating a structured RTCFC prompt.</p>
                       </div>
-                    ) : result ? (
-                      <pre className={cn(
-                        "whitespace-pre-wrap break-words font-sans text-sm leading-relaxed",
-                        outputMode === "api"
-                          ? "font-mono text-emerald-700 dark:text-emerald-300"
-                          : "text-slate-800 dark:text-slate-200"
-                      )}>
-                        {outputMode === "api" ? getApiModeOutput() : result.optimized_prompt}
-                      </pre>
                     ) : null}
                   </div>
 
