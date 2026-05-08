@@ -7,10 +7,15 @@
 
 import { z } from "zod";
 
+export const PROMPT_MAX_CHARS = 4000;
+export const REFINE_SOURCE_MAX_CHARS = 6000;
+export const REFINE_INSTRUCTION_MAX_CHARS = 500;
+export const CLARIFICATION_ANSWER_MAX_CHARS = 3000;
+
 // ─── /api/generate ─────────────────────────────────────────────────────────────
 
 export const GenerateSchemaObject = z.object({
-  optimized_prompt: z.string().describe("The highly detailed, formatted expert prompt"),
+  optimized_prompt: z.string().describe("Optimized expert prompt"),
   routing: z.object({
     open_source: z.object({
       platform_id: z.string(),
@@ -27,7 +32,7 @@ export const GenerateSchemaObject = z.object({
       model_name: z.string(),
       reasoning: z.string(),
     }),
-  }).describe("Routing recommendations for different model tiers")
+  }).describe("Best model/platform by tier")
 });
 
 export const GenerateRequestSchema = z.object({
@@ -35,14 +40,15 @@ export const GenerateRequestSchema = z.object({
     .string({ message: "A non-empty prompt is required." })
     .trim()
     .min(1, "A non-empty prompt is required.")
-    .transform((v) => v.slice(0, 4000)),
+    .max(PROMPT_MAX_CHARS, `Prompt must be ${PROMPT_MAX_CHARS} characters or fewer.`),
   clarifications: z
     .array(
       z.object({
-        question: z.string(),
-        answer: z.string(),
+        question: z.string().trim().transform((v) => v.slice(0, 160)),
+        answer: z.string().trim().transform((v) => v.slice(0, CLARIFICATION_ANSWER_MAX_CHARS)),
       }),
     )
+    .max(6)
     .optional()
     .default([]),
 });
@@ -56,7 +62,7 @@ export const ClarifyRequestSchema = z.object({
     .string({ message: "A non-empty prompt is required." })
     .trim()
     .min(1, "A non-empty prompt is required.")
-    .transform((v) => v.slice(0, 4000)),
+    .max(PROMPT_MAX_CHARS, `Prompt must be ${PROMPT_MAX_CHARS} characters or fewer.`),
 });
 
 export type ClarifyInput = z.infer<typeof ClarifyRequestSchema>;
@@ -68,12 +74,15 @@ export const RefineRequestSchema = z.object({
     .string({ message: "A non-empty currentPrompt is required." })
     .trim()
     .min(1, "A non-empty currentPrompt is required.")
-    .transform((v) => v.slice(0, 6000)),
+    .transform((v) => v.slice(0, REFINE_SOURCE_MAX_CHARS)),
   instruction: z
     .string({ message: "A non-empty instruction is required." })
     .trim()
     .min(1, "A non-empty instruction is required.")
-    .transform((v) => v.slice(0, 500)),
+    .max(
+      REFINE_INSTRUCTION_MAX_CHARS,
+      `Instruction must be ${REFINE_INSTRUCTION_MAX_CHARS} characters or fewer.`,
+    ),
 });
 
 export type RefineInput = z.infer<typeof RefineRequestSchema>;

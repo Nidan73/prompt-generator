@@ -25,12 +25,14 @@ To overcome the strict rate limits of free AI APIs, we built a **Round-Robin Loa
 - **Task-Specific Pools:** Clarification and refinement use broad speed-first pools; generation is constrained to models/endpoints that support strict structured JSON output.
 - **Live-Smoke Verified Generation:** The generation pool currently includes Groq GPT-OSS structured-output models plus Gemini/OpenRouter structured-output fallbacks.
 - **Fail-Fast Resilience:** If a provider returns a `429 (Rate Limit)` or `500` error, the backend instantly (within 50ms) cascades to the next model in the pool.
+- **Provider Health Cooldown:** Repeated provider failures temporarily cool that provider down inside the active runtime so traffic does not keep hitting a known-bad endpoint first.
 - **Capacity:** Adding more provider keys increases available free-tier capacity without changing application code.
 
 ### 3. Live Model-Aware Routing
-The routing layer combines a verified platform registry with a daily cached OpenRouter model landscape.
+The routing layer combines a verified platform registry with a cached OpenRouter model landscape.
 - **Verified URLs:** The LLM returns `platform_id` values, and the client resolves them against local platform URLs.
 - **Fresh Recommendations:** `/api/generate` injects the current model landscape so routing can prefer newer suitable models instead of stale hardcoded picks.
+- **Low-Latency Cache:** The landscape uses a short in-memory cache plus Vercel/Next fetch caching to avoid calling OpenRouter on every generation request.
 - **Safe Fallbacks:** If live model data is unavailable, the app falls back to a static model landscape.
 
 ---
@@ -58,7 +60,11 @@ Generated prompts can be refined with the streaming "Tweak It" editor, copied as
 ## 🛡️ Reliability & Security
 
 - **Upstash Redis Rate Limiting:** Enforces a sliding-window limit (50 generations per user per day) to prevent API abuse.
-- **Input Defense:** Generation inputs are capped at 4,000 characters and refinement inputs are capped separately to protect quotas.
+- **Input Defense:** Generation inputs are capped at 4,000 characters, clarification payloads are bounded, and refinement inputs are capped separately to protect quotas.
+- **Safe URL Extraction:** URL reads block private/internal hosts, enforce fetch timeouts, reject oversized responses, and only process text-like content.
+- **Production Telemetry:** API routes emit structured logs for route, provider, latency, fallback count, and safe input-size metadata without logging full prompts.
+- **Health Endpoint:** `/api/health` reports required env readiness, provider-pool status, and model-landscape cache state.
+- **CI Smoke Checks:** GitHub Actions run lint, build, and mocked Playwright E2E on pushes and pull requests.
 - **Vercel Edge Runtime:** All API routes run on the Edge for global low-latency and zero cold starts.
 
 ---
@@ -85,12 +91,19 @@ npm install
 npm run dev
 ```
 
+### Verification
+```bash
+npm run lint
+npm run build
+npm run test:e2e
+```
+
 ---
 
 ## 🗺️ Roadmap
 - [x] **Streaming UI:** Full migration to Vercel AI SDK for real-time feedback.
 - [x] **Provider Multiplexing:** Round-Robin load balancing with task-specific provider pools.
-- [x] **Live Model Routing:** Daily cached model landscape plus verified platform resolution.
+- [x] **Live Model Routing:** Cached model landscape plus verified platform resolution.
 - [x] **Local History & Sharing:** Browser-local prompt history and compressed share links.
 - [ ] **Multi-Modal Support:** Visual prompting for GPT-4o-vision/Gemini Pro Vision.
 - [ ] **Advanced Prompt Versioning:** Diffing between "Version A" and "Version B" of an optimized prompt.

@@ -1,14 +1,26 @@
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { NextResponse, type NextRequest } from "next/server";
-import { getRotatedChain, GENERATE_POOL } from "@/lib/provider-pool";
+import { streamObject } from "ai";
 import {
   GenerateRequestSchema,
   GenerateSchemaObject,
   parseRequestBody,
 } from "@/lib/api-schemas";
 import { buildRegistryBlock, getLiveModelLandscape } from "@/lib/ai-catalog";
-import { streamObject } from "ai";
+import {
+  classifyError,
+  getClientIdentifier,
+  logApiEvent,
+  rateLimitHeaders,
+  retryAfterSeconds,
+} from "@/lib/api-observability";
+import {
+  GENERATE_POOL,
+  getRotatedChain,
+  recordProviderFailure,
+  recordProviderSuccess,
+} from "@/lib/provider-pool";
 
 export const maxDuration = 60;
 export const runtime = "edge";
@@ -20,124 +32,147 @@ const generateRateLimit = new Ratelimit({
   prefix: "prompt-gen-api",
 });
 
-// ─── Constants & Prompts ───────────────────────────────────────────────────────
+const BASE_SYSTEM_PROMPT = `You are Bhai Thik Kor: prompt optimizer + AI platform router.
+Return only schema-valid JSON. No markdown fences or hidden reasoning.
 
-const BASE_SYSTEM_PROMPT = `You are the core logic engine of "Bhai Thik Kor" — an elite prompt optimization router.
-Your objective is to read the user's rough prompt and their selected clarifications, detect their underlying intent, and transform it into a professional, highly structured prompt.
+Optimize the rough prompt into a complete, executable expert prompt. Pick framework by intent: code=Context/Objective/Constraints/Output; creative=Premise/Tone/Elements/Format; data=Data/Goal/Steps/Output; marketing=AIDA or PAS; default=Role/Task/Context/Format/Constraints.
 
-[STRICT DIRECTIVES]
-1. DO NOT return markdown blocks (like \`\`\`json). Just the raw JSON.
-2. DO NOT output your internal thought process or reasoning before the JSON.
-3. You must rewrite the user's prompt using the best structural framework.
-
-[OUTPUT SCHEMA]
-Return a JSON object conforming to the provided schema.
-
-PART 1 — PROMPT OPTIMIZATION (The Switchboard)
-Detect the user's intent and format the 'optimized_prompt' using standard industry frameworks.
-Examples: 
-- Code/Scripting -> Use 'Context, Objective, Constraints, Output Format'
-- Creative Writing -> Use 'Premise, Tone/Style, Key Elements, Format'
-- Data Analysis -> Use 'Data Source, Objective, Analysis Steps, Output Format'
-- Marketing -> Use 'AIDA' or 'PAS'
-- General (Fallback) -> Use 'Role, Task, Context, Format, Constraints'
-
-PART 2 — MODEL ROUTING (Ranking-Based)
-Recommend the best AI model for this specific task across three tiers based on the supplied current model landscape.
-For each tier, return:
-- platform_id: one of the valid platform IDs from the registry below.
-- model_name: the specific model to use.
-- reasoning: 1 concise sentence explaining the fit.
-`;
+Route to one best model/platform for each tier: open_source, freemium, premium. Use only platform_id values from PLATFORMS and current model names from MODELS when suitable. Reasoning: one concise fit sentence.`;
 
 function buildSystemPrompt(modelLandscape: string) {
   return `${BASE_SYSTEM_PROMPT}
 
-[VALID PLATFORM REGISTRY]
+[PLATFORMS]
 ${buildRegistryBlock()}
 
-[CURRENT MODEL LANDSCAPE]
+[MODELS]
 ${modelLandscape}
 
-Use only platform IDs from the registry. If a latest model is unavailable on a tier's platform, choose the strongest valid model/platform pair for that tier.`;
+If a latest model is not valid for a tier, choose the strongest valid platform/model pair.`;
 }
 
-// ─── Route Handler ─────────────────────────────────────────────────────────────
-
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+
   try {
     const ip = getClientIdentifier(request);
-    const { success, limit, remaining, reset } = await generateRateLimit.limit(ip);
+    const limitResult = await generateRateLimit.limit(ip);
+    const { success, limit, remaining, reset } = limitResult;
 
     if (!success) {
+      const retryAfter = retryAfterSeconds(reset);
+      logApiEvent({
+        route: "generate",
+        event: "rate_limited",
+        status: 429,
+        durationMs: Date.now() - startedAt,
+      });
+
       return NextResponse.json(
-        { error: "Daily prompt generation limit reached. Please try again tomorrow." },
+        {
+          error: "Daily prompt generation limit reached. Please try again tomorrow.",
+          retryAfter,
+        },
         {
           status: 429,
           headers: {
-            "X-RateLimit-Limit": String(limit),
-            "X-RateLimit-Remaining": String(remaining),
-            "X-RateLimit-Reset": String(reset),
+            ...rateLimitHeaders(limitResult),
+            "Retry-After": String(retryAfter),
           },
         },
       );
     }
 
     const parsed = await parseRequestBody(request, GenerateRequestSchema);
-    if (parsed.error) return parsed.error;
+    if (parsed.error) {
+      logApiEvent({
+        route: "generate",
+        event: "validation_failed",
+        status: parsed.error.status,
+        durationMs: Date.now() - startedAt,
+      });
+      return parsed.error;
+    }
 
     const { prompt: userPrompt, clarifications } = parsed.data;
-    let userContent = `ROUGH PROMPT:\n${userPrompt}\n\n`;
+    let userContent = `PROMPT:\n${userPrompt}\n`;
+
     if (clarifications.length > 0) {
-      userContent += `USER CLARIFICATIONS:\n`;
-      clarifications.forEach((c) => {
-        userContent += `Q: ${c.question}\nA: ${c.answer}\n\n`;
+      userContent += "\nCLARIFICATIONS:\n";
+      clarifications.forEach((clarification) => {
+        userContent += `- ${clarification.question}: ${clarification.answer}\n`;
       });
     }
 
     const systemPrompt = buildSystemPrompt(await getLiveModelLandscape());
     const chain = getRotatedChain("generate", GENERATE_POOL);
     let lastError: unknown = new Error("No API keys configured or all providers failed.");
+    let fallbackCount = 0;
 
-    // Load Balancer Loop
     for (const provider of chain) {
+      const providerStartedAt = Date.now();
+
       try {
         const result = await streamObject({
           model: provider.sdkModel,
           system: systemPrompt,
           prompt: userContent,
           schema: GenerateSchemaObject,
-          maxRetries: 0, // Disable internal retries so we can fail-fast to the next provider
+          maxRetries: 0,
         });
 
-        // If the promise resolves, the provider accepted the request and streaming begins.
-        // Return the TextStreamResponse (which streams JSON patches directly to the client).
+        recordProviderSuccess("generate", provider.name, Date.now() - providerStartedAt);
+        logApiEvent({
+          route: "generate",
+          event: "provider_accepted",
+          status: 200,
+          provider: provider.name,
+          durationMs: Date.now() - startedAt,
+          inputChars: userPrompt.length,
+          clarificationCount: clarifications.length,
+          fallbackCount,
+        });
+
         return result.toTextStreamResponse({
           headers: {
             "X-RateLimit-Limit": String(limit),
             "X-RateLimit-Remaining": String(remaining),
             "X-RateLimit-Reset": String(reset),
             "X-Provider-Name": provider.name,
-          }
+          },
         });
       } catch (error) {
         lastError = error;
-        console.warn(`Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
+        fallbackCount += 1;
+        recordProviderFailure("generate", provider.name);
+        logApiEvent({
+          route: "generate",
+          event: "provider_fallback",
+          status: 502,
+          provider: provider.name,
+          durationMs: Date.now() - providerStartedAt,
+          errorType: classifyError(error),
+          fallbackCount,
+        });
+        console.warn(
+          `Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 
-    // If we exhaust the pool
     throw lastError;
-
   } catch (error) {
+    logApiEvent({
+      route: "generate",
+      event: "failed",
+      status: 500,
+      durationMs: Date.now() - startedAt,
+      errorType: classifyError(error),
+    });
     console.error("Prompt generation failed", error);
-    return NextResponse.json({ error: "Unable to generate a prompt right now." }, { status: 500 });
+    return NextResponse.json(
+      { error: "All AI providers are busy or unavailable. Please try again in a moment." },
+      { status: 503 },
+    );
   }
-}
-
-function getClientIdentifier(request: NextRequest) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = request.headers.get("x-real-ip");
-  const cloudflareIp = request.headers.get("cf-connecting-ip");
-  return forwardedFor || realIp || cloudflareIp || "anonymous";
 }

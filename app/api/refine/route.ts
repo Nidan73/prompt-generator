@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
-import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
-import { type ProviderConfig, REFINE_POOL, getRotatedChain } from "@/lib/provider-pool";
 import { streamText } from "ai";
+import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
+import {
+  classifyError,
+  getClientIdentifier,
+  logApiEvent,
+  rateLimitHeaders,
+  retryAfterSeconds,
+} from "@/lib/api-observability";
+import {
+  REFINE_POOL,
+  getRotatedChain,
+  recordProviderFailure,
+  recordProviderSuccess,
+} from "@/lib/provider-pool";
 
 export const runtime = "edge";
 
@@ -14,86 +26,115 @@ const ratelimit = new Ratelimit({
   prefix: "@prompt-generator/refine",
 });
 
-const SYSTEM_PROMPT = `You are an expert prompt editor. The user has an existing AI prompt and they want a specific modification applied to it.
-
-CRITICAL INSTRUCTION: ADAPTIVE FRAMEWORK PRESERVATION
-You must analyze the structural format of the user's existing prompt and STRICTLY preserve it. 
-- If it uses XML tags (e.g. <context>, <task>), KEEP the XML tags.
-- If it is a comma-separated list of visual tags (e.g. for Image/Video generation), KEEP it as a continuous comma-separated paragraph.
-- If it uses the RTCFC framework (Role, Task, Context, Format, Constraints headers), KEEP those exact headers.
-- If it uses AIDA or PAS headers, KEEP those exact headers.
-
-Rules:
-- Apply the user's modification precisely. Do NOT rewrite sections they didn't ask to change.
-- Preserve the exact structural framework and layout of the original prompt.
-- Return ONLY the modified prompt text. No JSON. No markdown code blocks. No commentary.
-- If the modification is unclear, make your best interpretation and apply it.`;
+const SYSTEM_PROMPT = `Edit the existing prompt according to the request.
+Preserve its structure: XML tags stay XML, comma-separated visual prompts stay comma-separated, RTCFC/AIDA/PAS headers stay intact.
+Change only what the user asks. Return only the modified prompt text; no JSON, fences, or commentary.`;
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const identifier = getClientIdentifier(request);
   const limit = await ratelimit.limit(identifier);
 
   if (!limit.success) {
-    const retryAfter = Math.max(1, Math.ceil((limit.reset - Date.now()) / 1000));
+    const retryAfter = retryAfterSeconds(limit.reset);
+    logApiEvent({
+      route: "refine",
+      event: "rate_limited",
+      status: 429,
+      durationMs: Date.now() - startedAt,
+    });
+
     return NextResponse.json(
       { error: "Rate limit exceeded. Please wait before trying again.", retryAfter },
       {
         status: 429,
         headers: {
+          ...rateLimitHeaders(limit),
           "Retry-After": String(retryAfter),
-          "X-RateLimit-Limit": String(limit.limit),
-          "X-RateLimit-Remaining": String(limit.remaining),
-          "X-RateLimit-Reset": String(limit.reset),
         },
       },
     );
   }
 
   const parsed = await parseRequestBody(request, RefineRequestSchema);
-  if (parsed.error) return parsed.error;
+  if (parsed.error) {
+    logApiEvent({
+      route: "refine",
+      event: "validation_failed",
+      status: parsed.error.status,
+      durationMs: Date.now() - startedAt,
+    });
+    return parsed.error;
+  }
 
   const { currentPrompt, instruction } = parsed.data;
-  const userContent = `EXISTING PROMPT:\n${currentPrompt.slice(0, 2000)}\n\nMODIFICATION REQUESTED:\n${instruction.slice(0, 500)}`;
+  const userContent = `PROMPT:\n${currentPrompt.slice(0, 2000)}\n\nEDIT:\n${instruction.slice(0, 500)}`;
 
   try {
     const chain = getRotatedChain("refine", REFINE_POOL);
     let lastError: unknown = new Error("No API keys configured or all providers failed.");
+    let fallbackCount = 0;
 
     for (const provider of chain) {
+      const providerStartedAt = Date.now();
+
       try {
         const result = await streamText({
           model: provider.sdkModel,
           system: SYSTEM_PROMPT,
           prompt: userContent,
-          maxRetries: 0, // Disable internal retries to fail-fast on 429s
+          maxRetries: 0,
+        });
+
+        recordProviderSuccess("refine", provider.name, Date.now() - providerStartedAt);
+        logApiEvent({
+          route: "refine",
+          event: "provider_accepted",
+          status: 200,
+          provider: provider.name,
+          durationMs: Date.now() - startedAt,
+          inputChars: currentPrompt.length + instruction.length,
+          fallbackCount,
         });
 
         return result.toTextStreamResponse({
           headers: {
-            "X-RateLimit-Limit": String(limit.limit),
-            "X-RateLimit-Remaining": String(limit.remaining),
-            "X-RateLimit-Reset": String(limit.reset),
+            ...rateLimitHeaders(limit),
             "X-Provider-Name": provider.name,
-          }
+          },
         });
       } catch (error) {
         lastError = error;
-        console.warn(`Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
+        fallbackCount += 1;
+        recordProviderFailure("refine", provider.name);
+        logApiEvent({
+          route: "refine",
+          event: "provider_fallback",
+          status: 502,
+          provider: provider.name,
+          durationMs: Date.now() - providerStartedAt,
+          errorType: classifyError(error),
+          fallbackCount,
+        });
+        console.warn(
+          `Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 
     throw lastError;
   } catch (error) {
+    logApiEvent({
+      route: "refine",
+      event: "failed",
+      status: 500,
+      durationMs: Date.now() - startedAt,
+      errorType: classifyError(error),
+    });
     console.error("Prompt refinement failed", error);
-    return NextResponse.json({ error: "Unable to refine the prompt right now." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Refinement is temporarily unavailable. Please retry in a moment." },
+      { status: 503 },
+    );
   }
-}
-
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-
-function getClientIdentifier(request: NextRequest) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = request.headers.get("x-real-ip");
-  const cloudflareIp = request.headers.get("cf-connecting-ip");
-  return forwardedFor || realIp || cloudflareIp || "anonymous";
 }

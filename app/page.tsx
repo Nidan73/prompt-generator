@@ -6,7 +6,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/components/theme-provider";
 import { saveToHistory, getHistory, clearHistory, type HistoryEntry } from "@/lib/prompt-history";
 import { encodePromptToHash, decodePromptFromHash } from "@/lib/share-link";
-import { GenerateSchemaObject } from "@/lib/api-schemas";
+import {
+  GenerateSchemaObject,
+  PROMPT_MAX_CHARS,
+  REFINE_INSTRUCTION_MAX_CHARS,
+} from "@/lib/api-schemas";
 import { resolveRecommendations } from "@/lib/ai-catalog";
 import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
 import clsx from "clsx";
@@ -136,6 +140,7 @@ export default function Home() {
 
   // Feature: URL Context Injection
   const [extractedContext, setExtractedContext] = useState<string | null>(null);
+  const [extractedContextUrl, setExtractedContextUrl] = useState<string | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
 
   const trimmedPrompt = prompt.trim();
@@ -143,9 +148,10 @@ export default function Home() {
     const urlMatch = trimmedPrompt.match(/https?:\/\/[^\s]+/);
     return urlMatch ? urlMatch[0] : null;
   }, [trimmedPrompt]);
+  const isPromptTooLong = prompt.length > PROMPT_MAX_CHARS;
   const wordCount = trimmedPrompt ? trimmedPrompt.split(/\s+/).length : 0;
   const hasPrompt = trimmedPrompt.length > 0;
-  const hasEnoughContext = wordCount >= 3;
+  const hasEnoughContext = wordCount >= 3 && !isPromptTooLong;
   const isCoolingDown = cooldownTimer > 0;
   const isGuided = questions.length > 0;
   const answeredQuestionCount = questions.filter((question) => answers[question.id]?.trim()).length;
@@ -373,7 +379,7 @@ export default function Home() {
 
     try {
       // URL Context Injection: extract page content if a URL is detected
-      let urlContext = extractedContext;
+      let urlContext = detectedUrl && extractedContextUrl === detectedUrl ? extractedContext : null;
       if (detectedUrl && !urlContext) {
         try {
           setIsExtracting(true);
@@ -386,6 +392,7 @@ export default function Home() {
             const extractData = await extractRes.json();
             urlContext = `[Extracted from ${extractData.title || detectedUrl}]: ${extractData.content}`;
             setExtractedContext(urlContext);
+            setExtractedContextUrl(detectedUrl);
           }
         } catch {
           // URL extraction failed silently — continue without it
@@ -723,17 +730,23 @@ export default function Home() {
                   Feeling lazy? Write your vague prompt here
                 </h2>
               </div>
-              {isCoolingDown ? (
-                <div className="inline-flex h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300">
-                  <AlertCircle className="h-4 w-4" />
-                  {cooldownTimer}s cooldown
-                </div>
-              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-10 items-center rounded-full border border-black/[0.05] bg-white/70 px-4 text-sm font-semibold text-slate-500 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-400">
+                  {prompt.length}/{PROMPT_MAX_CHARS}
+                </span>
+                {isCoolingDown ? (
+                  <div className="inline-flex h-10 items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300">
+                    <AlertCircle className="h-4 w-4" />
+                    {cooldownTimer}s cooldown
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <textarea
               id="prompt"
               value={prompt}
+              maxLength={PROMPT_MAX_CHARS}
               onChange={(event) => setPrompt(event.target.value)}
               onFocus={() => {
                 // On mobile, wait for keyboard to fully open, then scroll the buttons into view so they 'bump up'
@@ -747,7 +760,17 @@ export default function Home() {
               className="mt-5 min-h-[120px] sm:min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
             />
             <AnimatePresence>
-              {hasPrompt && !hasEnoughContext ? (
+              {isPromptTooLong ? (
+                <motion.p
+                  variants={fadeUp}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="mt-3 text-sm font-medium text-amber-600 dark:text-amber-400"
+                >
+                  Keep the rough prompt under {PROMPT_MAX_CHARS} characters.
+                </motion.p>
+              ) : hasPrompt && !hasEnoughContext ? (
                 <motion.p
                   variants={fadeUp}
                   initial="initial"
@@ -1089,6 +1112,7 @@ export default function Home() {
                       <input
                         type="text"
                         value={refineInput}
+                        maxLength={REFINE_INSTRUCTION_MAX_CHARS}
                         onChange={(e) => setRefineInput(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") refinePrompt(); }}
                         placeholder="Refine: e.g., make it shorter, add error handling..."

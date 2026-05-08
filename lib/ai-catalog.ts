@@ -103,14 +103,30 @@ type OpenRouterModel = {
   created?: number;
 };
 
-/**
- * Fetch the latest model releases from OpenRouter, filter noise,
- * and map each provider to its platform_id for the LLM.
- *
- * Cached for 24 hours by Next.js. Falls back to the static
- * landscape if the API is unreachable.
- */
-export async function getLiveModelLandscape(): Promise<string> {
+type LandscapeCache = {
+  value: string;
+  source: "live" | "fallback";
+  fetchedAt: number;
+  expiresAt: number;
+};
+
+const LANDSCAPE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+let landscapeCache: LandscapeCache | null = null;
+let landscapeInFlight: Promise<LandscapeCache> | null = null;
+
+function compactLandscape(landscape: string): string {
+  return landscape
+    .replace("CURRENT MODEL LANDSCAPE (live data, updated daily):\n", "")
+    .replace("CURRENT MODEL LANDSCAPE:\n", "")
+    .replace(/^- /gm, "")
+    .replace(/\s+use platform\s+/g, " ")
+    .replace(/\nNOTE:[\s\S]*$/m, "\nImage tasks: prefer ChatGPT/Gemini/Grok. Prefer newer models.")
+    .trim();
+}
+
+async function fetchModelLandscape(): Promise<LandscapeCache> {
+  const now = Date.now();
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -123,17 +139,27 @@ export async function getLiveModelLandscape(): Promise<string> {
     clearTimeout(timeout);
 
     if (!res.ok) {
-      return STATIC_FALLBACK_LANDSCAPE;
+      return {
+        value: compactLandscape(STATIC_FALLBACK_LANDSCAPE),
+        source: "fallback",
+        fetchedAt: now,
+        expiresAt: now + LANDSCAPE_CACHE_TTL_MS,
+      };
     }
 
     const data = (await res.json()) as { data?: OpenRouterModel[] };
     const models = data.data;
 
     if (!Array.isArray(models) || models.length === 0) {
-      return STATIC_FALLBACK_LANDSCAPE;
+      return {
+        value: compactLandscape(STATIC_FALLBACK_LANDSCAPE),
+        source: "fallback",
+        fetchedAt: now,
+        expiresAt: now + LANDSCAPE_CACHE_TTL_MS,
+      };
     }
 
-    let landscape = "CURRENT MODEL LANDSCAPE (live data, updated daily):\n";
+    let landscape = "";
 
     for (const provider of PROVIDER_MAP) {
       const matches = models
@@ -153,7 +179,7 @@ export async function getLiveModelLandscape(): Promise<string> {
           return true;
         })
         .sort((a, b) => (b.created || 0) - (a.created || 0))
-        .slice(0, 3)
+        .slice(0, 2)
         .map((m) => {
           // Strip provider prefix from name for cleaner output
           // "OpenAI: GPT-5.5" → "GPT-5.5"
@@ -170,10 +196,60 @@ export async function getLiveModelLandscape(): Promise<string> {
     landscape += `\nNOTE: Many platforms above (ChatGPT, Gemini, Grok) have built-in image generation. For image tasks, route to those same platforms — not to standalone image tools.
 IMPORTANT: The list above shows the latest released models. Do NOT recommend older versions. Use the platform ID in brackets [like_this] for your routing picks.`;
 
-    return landscape;
+    return {
+      value: compactLandscape(landscape),
+      source: "live",
+      fetchedAt: now,
+      expiresAt: now + LANDSCAPE_CACHE_TTL_MS,
+    };
   } catch {
-    return STATIC_FALLBACK_LANDSCAPE;
+    return {
+      value: compactLandscape(STATIC_FALLBACK_LANDSCAPE),
+      source: "fallback",
+      fetchedAt: now,
+      expiresAt: now + LANDSCAPE_CACHE_TTL_MS,
+    };
   }
+}
+
+/**
+ * Fetch the latest model releases from OpenRouter, filter noise,
+ * and map each provider to its platform_id for the LLM.
+ *
+ * A short in-memory cache avoids paying this fetch on every generation request.
+ * The fetch itself still uses Next/Vercel revalidation as a second cache layer.
+ */
+export async function getLiveModelLandscape(): Promise<string> {
+  const now = Date.now();
+
+  if (landscapeCache && landscapeCache.expiresAt > now) {
+    return landscapeCache.value;
+  }
+
+  if (landscapeInFlight) {
+    return (await landscapeInFlight).value;
+  }
+
+  landscapeInFlight = fetchModelLandscape();
+
+  try {
+    landscapeCache = await landscapeInFlight;
+    return landscapeCache.value;
+  } finally {
+    landscapeInFlight = null;
+  }
+}
+
+export function getModelLandscapeCacheState() {
+  const now = Date.now();
+
+  return {
+    cached: Boolean(landscapeCache),
+    source: landscapeCache?.source ?? "empty",
+    ageMs: landscapeCache ? now - landscapeCache.fetchedAt : null,
+    expiresInMs: landscapeCache ? Math.max(0, landscapeCache.expiresAt - now) : null,
+    inFlight: Boolean(landscapeInFlight),
+  };
 }
 
 // ─── Registry Helpers ──────────────────────────────────────────────────────────
@@ -181,7 +257,7 @@ IMPORTANT: The list above shows the latest released models. Do NOT recommend old
 /** Build a compact registry list for the system prompt. */
 export function buildRegistryBlock(): string {
   return PLATFORM_REGISTRY.map(
-    (p) => `  [${p.id}] ${p.name} (${p.tiers.join(", ")})`,
+    (p) => `[${p.id}] ${p.name}:${p.tiers.join("/")}`,
   ).join("\n");
 }
 

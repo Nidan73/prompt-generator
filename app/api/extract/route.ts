@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { ExtractRequestSchema, parseRequestBody } from "@/lib/api-schemas";
+import {
+  getClientIdentifier,
+  logApiEvent,
+  rateLimitHeaders,
+  retryAfterSeconds,
+} from "@/lib/api-observability";
 
 export const runtime = "edge";
 
@@ -14,68 +19,110 @@ const ratelimit = new Ratelimit({
 });
 
 const MAX_CONTENT_LENGTH = 3000;
+const MAX_FETCH_BYTES = 500_000;
+const URL_TIMEOUT_MS = 4000;
+const ALLOWED_CONTENT_TYPES = [
+  "text/html",
+  "text/plain",
+  "text/markdown",
+  "application/xhtml+xml",
+  "application/json",
+];
+
+type ExtractionResult = { content: string; title: string; source: "jina" | "direct" } | null;
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const identifier = getClientIdentifier(request);
   const limit = await ratelimit.limit(identifier);
 
   if (!limit.success) {
-    const retryAfter = Math.max(1, Math.ceil((limit.reset - Date.now()) / 1000));
+    const retryAfter = retryAfterSeconds(limit.reset);
+    logApiEvent({
+      route: "extract",
+      event: "rate_limited",
+      status: 429,
+      durationMs: Date.now() - startedAt,
+    });
+
     return NextResponse.json(
       { error: "Rate limit exceeded. Please wait before trying again.", retryAfter },
       {
         status: 429,
         headers: {
+          ...rateLimitHeaders(limit),
           "Retry-After": String(retryAfter),
-          "X-RateLimit-Limit": String(limit.limit),
-          "X-RateLimit-Remaining": String(limit.remaining),
-          "X-RateLimit-Reset": String(limit.reset),
         },
       },
     );
   }
 
   const parsed = await parseRequestBody(request, ExtractRequestSchema);
-  if (parsed.error) return parsed.error;
+  if (parsed.error) {
+    logApiEvent({
+      route: "extract",
+      event: "validation_failed",
+      status: parsed.error.status,
+      durationMs: Date.now() - startedAt,
+    });
+    return parsed.error;
+  }
 
   const { url } = parsed.data;
+  const blockedReason = getBlockedUrlReason(url);
+
+  if (blockedReason) {
+    logApiEvent({
+      route: "extract",
+      event: "blocked_url",
+      status: 400,
+      durationMs: Date.now() - startedAt,
+      details: { reason: blockedReason, host: safeHostname(url) },
+    });
+    return NextResponse.json(
+      { error: "This URL cannot be extracted for safety reasons." },
+      { status: 400 },
+    );
+  }
 
   try {
-    // Strategy 1: Jina Reader (handles SPAs, JS-heavy sites, returns clean markdown)
-    const jinaResult = await tryJinaReader(url);
-    if (jinaResult) {
+    const result = (await tryJinaReader(url)) ?? (await tryDirectFetch(url));
+
+    if (result) {
+      logApiEvent({
+        route: "extract",
+        event: "succeeded",
+        status: 200,
+        durationMs: Date.now() - startedAt,
+        inputChars: result.content.length,
+        details: { source: result.source, host: safeHostname(url) },
+      });
+
       return NextResponse.json(
-        { content: jinaResult.content, title: jinaResult.title },
-        {
-          headers: {
-            "X-RateLimit-Limit": String(limit.limit),
-            "X-RateLimit-Remaining": String(limit.remaining),
-            "X-RateLimit-Reset": String(limit.reset),
-          },
-        },
+        { content: result.content, title: result.title },
+        { headers: rateLimitHeaders(limit) },
       );
     }
 
-    // Strategy 2: Direct fetch + HTML strip (fallback for simple pages)
-    const directResult = await tryDirectFetch(url);
-    if (directResult) {
-      return NextResponse.json(
-        { content: directResult.content, title: directResult.title },
-        {
-          headers: {
-            "X-RateLimit-Limit": String(limit.limit),
-            "X-RateLimit-Remaining": String(limit.remaining),
-            "X-RateLimit-Reset": String(limit.reset),
-          },
-        },
-      );
-    }
-
+    logApiEvent({
+      route: "extract",
+      event: "no_content",
+      status: 422,
+      durationMs: Date.now() - startedAt,
+      details: { host: safeHostname(url) },
+    });
     return NextResponse.json(
       { error: "Could not extract meaningful text from this URL." },
       { status: 422 },
     );
   } catch (error) {
+    logApiEvent({
+      route: "extract",
+      event: "failed",
+      status: 500,
+      durationMs: Date.now() - startedAt,
+      details: { host: safeHostname(url) },
+    });
     console.error("URL extraction failed", error);
     return NextResponse.json(
       { error: "Unable to fetch this URL. It may be blocking requests or taking too long." },
@@ -84,19 +131,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ─── Extraction Strategies ─────────────────────────────────────────────────────
-
-type ExtractionResult = { content: string; title: string } | null;
-
-/**
- * Jina Reader: executes JavaScript, handles SPAs, returns clean markdown.
- * Free tier, no API key required. 3s timeout.
- */
 async function tryJinaReader(url: string): Promise<ExtractionResult> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), URL_TIMEOUT_MS);
 
+  try {
     const response = await fetch(`https://r.jina.ai/${url}`, {
       signal: controller.signal,
       headers: {
@@ -105,74 +144,162 @@ async function tryJinaReader(url: string): Promise<ExtractionResult> {
       },
     });
 
-    clearTimeout(timeout);
+    if (!response.ok || !isResponseSmallEnough(response)) return null;
 
-    if (!response.ok) return null;
-
-    const text = await response.text();
+    const text = await readTextWithinLimit(response, MAX_FETCH_BYTES);
     if (!text || text.trim().length < 50) return null;
 
-    // Jina returns markdown — extract a title from the first heading if present
     const titleMatch = text.match(/^#\s+(.+)$/m);
-    const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
-
-    // Trim to max length
+    const title = sanitizeTitle(titleMatch ? titleMatch[1] : new URL(url).hostname);
     const content = text.trim().slice(0, MAX_CONTENT_LENGTH);
 
-    return { content, title };
+    return { content, title, source: "jina" };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-/**
- * Direct fetch + HTML strip: fast fallback for simple static pages.
- * 3s timeout, basic HTML stripping.
- */
 async function tryDirectFetch(url: string): Promise<ExtractionResult> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), URL_TIMEOUT_MS);
 
+  try {
     const response = await fetch(url, {
       signal: controller.signal,
+      redirect: "follow",
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; PromptGeneratorBot/1.0)",
-        Accept: "text/html,application/xhtml+xml,text/plain",
+        Accept: "text/html,application/xhtml+xml,text/plain,text/markdown,application/json",
       },
     });
 
-    clearTimeout(timeout);
+    if (!response.ok || !isResponseSmallEnough(response)) return null;
+    if (getBlockedUrlReason(response.url)) return null;
 
-    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType && !ALLOWED_CONTENT_TYPES.some((type) => contentType.includes(type))) {
+      return null;
+    }
 
-    const html = await response.text();
+    const html = await readTextWithinLimit(response, MAX_FETCH_BYTES);
+    if (!html) return null;
 
     const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
-
+    const title = sanitizeTitle(titleMatch ? titleMatch[1] : new URL(response.url || url).hostname);
     const textContent = stripHtml(html).slice(0, MAX_CONTENT_LENGTH);
     if (!textContent.trim() || textContent.trim().length < 50) return null;
 
-    return { content: textContent, title };
+    return { content: textContent, title, source: "direct" };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-
-function getClientIdentifier(request: NextRequest) {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = request.headers.get("x-real-ip");
-  const cloudflareIp = request.headers.get("cf-connecting-ip");
-  return forwardedFor || realIp || cloudflareIp || "anonymous";
+function isResponseSmallEnough(response: Response) {
+  const contentLength = Number(response.headers.get("content-length") ?? 0);
+  return !contentLength || contentLength <= MAX_FETCH_BYTES;
 }
 
-/**
- * Strip HTML tags and normalize whitespace to extract readable text.
- * Removes script/style blocks entirely, then strips remaining tags.
- */
+async function readTextWithinLimit(response: Response, maxBytes: number): Promise<string | null> {
+  if (!response.body) return null;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let receivedBytes = 0;
+  let text = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    receivedBytes += value.byteLength;
+    if (receivedBytes > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+
+    text += decoder.decode(value, { stream: true });
+  }
+
+  text += decoder.decode();
+  return text;
+}
+
+function getBlockedUrlReason(rawUrl: string): string | null {
+  let url: URL;
+
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return "invalid_url";
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") return "unsupported_protocol";
+
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".lan") ||
+    host.endsWith(".home")
+  ) {
+    return "private_host";
+  }
+
+  if (
+    host === "::1" ||
+    host === "0.0.0.0" ||
+    host.startsWith("127.") ||
+    host.startsWith("10.") ||
+    host.startsWith("169.254.") ||
+    host.startsWith("192.168.") ||
+    isPrivate172(host) ||
+    isPrivateIpv6(host)
+  ) {
+    return "private_ip";
+  }
+
+  return null;
+}
+
+function isPrivate172(host: string): boolean {
+  const parts = host.split(".");
+  if (parts.length !== 4 || parts[0] !== "172") return false;
+
+  const second = Number(parts[1]);
+  return Number.isInteger(second) && second >= 16 && second <= 31;
+}
+
+function isPrivateIpv6(host: string): boolean {
+  if (!host.includes(":")) return false;
+
+  return (
+    host === "::1" ||
+    host.startsWith("fc") ||
+    host.startsWith("fd") ||
+    host.startsWith("fe80:")
+  );
+}
+
+function safeHostname(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).hostname;
+  } catch {
+    return "invalid";
+  }
+}
+
+function sanitizeTitle(title: string): string {
+  return stripHtml(title).replace(/\s+/g, " ").trim().slice(0, 120) || "Untitled page";
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, "")

@@ -22,6 +22,85 @@ export type ProviderConfig = {
   hasKey: boolean;
 };
 
+type ProviderHealth = {
+  failures: number;
+  coolingDownUntil: number;
+  lastFailureAt?: number;
+  lastSuccessAt?: number;
+  lastLatencyMs?: number;
+};
+
+const FAILURE_COOLDOWN_THRESHOLD = 2;
+const PROVIDER_COOLDOWN_MS = 2 * 60 * 1000;
+const providerHealth = new Map<string, ProviderHealth>();
+
+function healthKey(poolName: string, providerName: string): string {
+  return `${poolName}:${providerName}`;
+}
+
+function readProviderHealth(poolName: string, providerName: string): ProviderHealth {
+  return providerHealth.get(healthKey(poolName, providerName)) ?? {
+    failures: 0,
+    coolingDownUntil: 0,
+  };
+}
+
+function isCoolingDown(poolName: string, providerName: string, now = Date.now()): boolean {
+  return readProviderHealth(poolName, providerName).coolingDownUntil > now;
+}
+
+export function recordProviderSuccess(
+  poolName: string,
+  providerName: string,
+  latencyMs?: number,
+) {
+  providerHealth.set(healthKey(poolName, providerName), {
+    failures: 0,
+    coolingDownUntil: 0,
+    lastSuccessAt: Date.now(),
+    lastLatencyMs: latencyMs,
+  });
+}
+
+export function recordProviderFailure(poolName: string, providerName: string) {
+  const current = readProviderHealth(poolName, providerName);
+  const failures = current.failures + 1;
+  providerHealth.set(healthKey(poolName, providerName), {
+    ...current,
+    failures,
+    coolingDownUntil:
+      failures >= FAILURE_COOLDOWN_THRESHOLD ? Date.now() + PROVIDER_COOLDOWN_MS : 0,
+    lastFailureAt: Date.now(),
+  });
+}
+
+export function getPoolRuntimeStatus(poolName: string, pool: ProviderConfig[]) {
+  const now = Date.now();
+  const configured = pool.filter((provider) => provider.hasKey);
+  const providers = configured.map((provider) => {
+    const health = readProviderHealth(poolName, provider.name);
+    const coolingDownForMs = Math.max(0, health.coolingDownUntil - now);
+
+    return {
+      name: provider.name,
+      status: coolingDownForMs > 0 ? "cooling_down" : "ready",
+      failures: health.failures,
+      coolingDownForMs,
+      lastLatencyMs: health.lastLatencyMs,
+      lastFailureAt: health.lastFailureAt,
+      lastSuccessAt: health.lastSuccessAt,
+    };
+  });
+
+  return {
+    total: pool.length,
+    configured: configured.length,
+    ready: providers.filter((provider) => provider.status === "ready").length,
+    coolingDown: providers.filter((provider) => provider.status === "cooling_down").length,
+    providers,
+  };
+}
+
 // ─── GENERATE Pool (needs smart models for complex JSON + switchboard output) ──
 
 export const GENERATE_POOL: ProviderConfig[] = [
@@ -87,8 +166,11 @@ function getNextIndex(poolName: string, poolSize: number): number {
 
 export function getRotatedChain(poolName: string, pool: ProviderConfig[]): ProviderConfig[] {
   // Filter out providers with no API key configured
-  const available = pool.filter((p) => p.hasKey);
-  if (available.length === 0) return [];
+  const configured = pool.filter((p) => p.hasKey);
+  if (configured.length === 0) return [];
+
+  const healthy = configured.filter((p) => !isCoolingDown(poolName, p.name));
+  const available = healthy.length > 0 ? healthy : configured;
 
   const startIndex = getNextIndex(poolName, available.length);
   return [...available.slice(startIndex), ...available.slice(0, startIndex)];

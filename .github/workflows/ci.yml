@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      UPSTASH_REDIS_REST_URL: https://example-upstash.local
+      UPSTASH_REDIS_REST_TOKEN: ci-placeholder
+      GROQ_API_KEY: ci-placeholder
+      GEMINI_API_KEY: ci-placeholder
+      OPENROUTER_API_KEY: ci-placeholder
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: E2E smoke
+        run: npm run test:e2e
