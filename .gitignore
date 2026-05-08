@@ -29,3 +29,5 @@ playwright-report/
 # local maintainer context
 PROJECT_CONTEXT.md
 PROMO_VIDEO_SCRIPT.md
+
+.vercel
