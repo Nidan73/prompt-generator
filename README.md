@@ -125,5 +125,3 @@ Operational counters are stored in Upstash Redis with daily keys like `btq:metri
 - [ ] **Multi-Modal Support:** Visual prompting for GPT-4o-vision/Gemini Pro Vision.
 - [ ] **Advanced Prompt Versioning:** Diffing between "Version A" and "Version B" of an optimized prompt.
 - [ ] **Community Hub:** Share optimized prompts to a public gallery.
-
-## 🤝 Contributing
