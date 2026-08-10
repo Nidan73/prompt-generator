@@ -106,9 +106,20 @@ export default function PrivacyPage() {
           Questions about this policy:{" "}
           <a
             className="font-medium text-[var(--accent)] hover:underline"
-            href="mailto:idublinfourir@gmail.com"
+            href="mailto:nidanalam73@gmail.com"
           >
-            idublinfourir@gmail.com
+            nidanalam73@gmail.com
+          </a>
+        </p>
+        <p>
+          Code and issues:{" "}
+          <a
+            className="font-medium text-[var(--accent)] hover:underline"
+            href="https://github.com/Nidan73"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            github.com/Nidan73
           </a>
         </p>
       </Section>
