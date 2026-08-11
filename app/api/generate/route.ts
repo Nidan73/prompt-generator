@@ -2,6 +2,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { NextResponse, type NextRequest } from "next/server";
 import { streamObject } from "ai";
+import { createGuardedTextStreamResponse } from "@/lib/stream-guard";
 import {
   GenerateRequestSchema,
   GenerateSchemaObject,
@@ -121,6 +122,24 @@ export async function POST(request: NextRequest) {
           maxRetries: 0,
         });
 
+        // Wait for real output before committing to a 200 — otherwise a provider
+        // that dies mid-stream leaves the client with an empty body and no
+        // fallback, because the headers have already gone out.
+        const response = await createGuardedTextStreamResponse({
+          textStream: result.textStream,
+          headers: {
+            "X-RateLimit-Limit": String(limit),
+            "X-RateLimit-Remaining": String(remaining),
+            "X-RateLimit-Reset": String(reset),
+            "X-Provider-Name": provider.name,
+          },
+          onLateFailure: (error) => {
+            console.warn(
+              `Stream from ${provider.name} ended early: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          },
+        });
+
         recordProviderSuccess("generate", provider.name, Date.now() - providerStartedAt);
         await trackApiEvent({
           route: "generate",
@@ -133,14 +152,7 @@ export async function POST(request: NextRequest) {
           fallbackCount,
         });
 
-        return result.toTextStreamResponse({
-          headers: {
-            "X-RateLimit-Limit": String(limit),
-            "X-RateLimit-Remaining": String(remaining),
-            "X-RateLimit-Reset": String(reset),
-            "X-Provider-Name": provider.name,
-          },
-        });
+        return response;
       } catch (error) {
         lastError = error;
         fallbackCount += 1;

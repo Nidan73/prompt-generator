@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { streamText } from "ai";
+import { createGuardedTextStreamResponse } from "@/lib/stream-guard";
 import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   classifyError,
@@ -86,6 +87,21 @@ export async function POST(request: NextRequest) {
           maxRetries: 0,
         });
 
+        // See the note in /api/generate: commit to a 200 only once the provider
+        // has actually produced something.
+        const response = await createGuardedTextStreamResponse({
+          textStream: result.textStream,
+          headers: {
+            ...rateLimitHeaders(limit),
+            "X-Provider-Name": provider.name,
+          },
+          onLateFailure: (error) => {
+            console.warn(
+              `Stream from ${provider.name} ended early: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          },
+        });
+
         recordProviderSuccess("refine", provider.name, Date.now() - providerStartedAt);
         await trackApiEvent({
           route: "refine",
@@ -97,12 +113,7 @@ export async function POST(request: NextRequest) {
           fallbackCount,
         });
 
-        return result.toTextStreamResponse({
-          headers: {
-            ...rateLimitHeaders(limit),
-            "X-Provider-Name": provider.name,
-          },
-        });
+        return response;
       } catch (error) {
         lastError = error;
         fallbackCount += 1;
