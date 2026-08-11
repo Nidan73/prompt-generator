@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -125,9 +126,9 @@ export default function PrivacyPage() {
       </Section>
 
       <p className="mt-12 text-sm">
-        <a className="font-medium text-[var(--accent)] hover:underline" href="/">
+        <Link className="font-medium text-[var(--accent)] hover:underline" href="/">
           ← Back to Bhai Thik Kor
-        </a>
+        </Link>
       </p>
     </main>
   );
