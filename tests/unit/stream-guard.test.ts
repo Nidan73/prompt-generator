@@ -1,5 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
-import { EmptyStreamError, createGuardedTextStreamResponse } from "../../lib/stream-guard";
+import {
+  EmptyStreamError,
+  createGuardedTextStreamResponse,
+  textStreamFromFullStream,
+} from "../../lib/stream-guard";
+
+/**
+ * Mirrors what the AI SDK actually puts on `fullStream`. A provider failure is a
+ * normal `{type:"error"}` part followed by a clean close — never a stream error —
+ * which is why reading `result.textStream` cannot detect it.
+ */
+function fullStreamOf(parts: Array<Record<string, unknown>>) {
+  return new ReadableStream<Record<string, unknown>>({
+    start(controller) {
+      parts.forEach((part) => controller.enqueue(part));
+      controller.close();
+    },
+  }) as ReadableStream<never>;
+}
+
+/** Drains a string stream; rejects if the stream errors. */
+async function drain(stream: ReadableStream<string>): Promise<string> {
+  const reader = stream.getReader();
+  let out = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return out;
+    if (value) out += value;
+  }
+}
 
 function streamOf(chunks: string[]): ReadableStream<string> {
   return new ReadableStream<string>({
@@ -91,6 +121,73 @@ describe("createGuardedTextStreamResponse", () => {
     });
 
     expect(await readAll(response)).toBe("partial output");
+    expect(onLateFailure).toHaveBeenCalledOnce();
+  });
+});
+
+describe("textStreamFromFullStream", () => {
+  it("forwards streamText deltas, which spell the text `text`", async () => {
+    const stream = textStreamFromFullStream(
+      fullStreamOf([
+        { type: "text-delta", text: "Hello" },
+        { type: "text-delta", text: " world" },
+        { type: "finish" },
+      ]),
+    );
+
+    expect(await drain(stream)).toBe("Hello world");
+  });
+
+  it("forwards streamObject deltas, which spell it `textDelta`", async () => {
+    const stream = textStreamFromFullStream(
+      fullStreamOf([
+        { type: "text-delta", textDelta: '{"a":' },
+        { type: "text-delta", textDelta: "1}" },
+        { type: "object", object: { a: 1 } },
+        { type: "finish" },
+      ]),
+    );
+
+    expect(await drain(stream)).toBe('{"a":1}');
+  });
+
+  it("turns an error part into a real stream error carrying the provider's message", async () => {
+    const stream = textStreamFromFullStream(
+      fullStreamOf([
+        {
+          type: "error",
+          error: new Error("ResourceExhausted: Worker local total request limit reached (32/32)"),
+        },
+      ]),
+    );
+
+    await expect(drain(stream)).rejects.toThrow(/ResourceExhausted/);
+  });
+
+  it("surfaces the real reason before the first chunk instead of a generic empty stream", async () => {
+    // Previously this arrived as `done`, so the guard reported "empty stream"
+    // and the fallback loop logged a cause that was not the actual failure.
+    const boom = new Error("429 rate limit exceeded");
+    await expect(
+      createGuardedTextStreamResponse({
+        textStream: textStreamFromFullStream(fullStreamOf([{ type: "error", error: boom }])),
+      }),
+    ).rejects.toThrow(/429 rate limit/);
+  });
+
+  it("reports mid-stream death instead of silently truncating the body", async () => {
+    const onLateFailure = vi.fn();
+    const response = await createGuardedTextStreamResponse({
+      textStream: textStreamFromFullStream(
+        fullStreamOf([
+          { type: "text-delta", textDelta: '{"optimized_prompt":"partial' },
+          { type: "error", error: new Error("provider disconnected") },
+        ]),
+      ),
+      onLateFailure,
+    });
+
+    expect(await readAll(response)).toBe('{"optimized_prompt":"partial');
     expect(onLateFailure).toHaveBeenCalledOnce();
   });
 });

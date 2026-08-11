@@ -24,6 +24,51 @@ export class EmptyStreamError extends Error {
   }
 }
 
+/** The subset of AI SDK stream parts this module cares about. */
+type StreamPart = {
+  type: string;
+  /** streamText spells the delta `text`; streamObject spells it `textDelta`. */
+  text?: string;
+  textDelta?: string;
+  error?: unknown;
+};
+
+/**
+ * Turn a `fullStream` into a text stream that actually fails on failure.
+ *
+ * `result.textStream` cannot be used for this. The AI SDK reports a provider
+ * error as an ordinary `{type:"error"}` part and then *closes* the stream —
+ * `streamObject`'s text transform has a literal `case "error": break;`, and
+ * `streamText`'s forwards only `text-delta`. So a dying provider looks exactly
+ * like a provider that finished, and every guard downstream reads `done: true`.
+ *
+ * The consequences that fix motivates: before the first chunk the real error was
+ * replaced by a generic "empty stream" (losing the reason the fallback loop
+ * logs), and after it the client received truncated JSON under a 200.
+ */
+export function textStreamFromFullStream(
+  fullStream: ReadableStream<StreamPart>,
+): ReadableStream<string> {
+  return fullStream.pipeThrough(
+    new TransformStream<StreamPart, string>({
+      transform(part, controller) {
+        if (part.type === "error") {
+          const error = part.error;
+          controller.error(
+            error instanceof Error ? error : new Error(String(error ?? "provider stream error")),
+          );
+          return;
+        }
+
+        if (part.type === "text-delta") {
+          const text = part.text ?? part.textDelta;
+          if (text) controller.enqueue(text);
+        }
+      },
+    }),
+  );
+}
+
 async function readFirstChunk(
   reader: ReadableStreamDefaultReader<string>,
   timeoutMs: number,

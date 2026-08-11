@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
 import { ExtractRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   getClientIdentifier,
@@ -8,18 +6,21 @@ import {
   retryAfterSeconds,
   trackApiEvent,
 } from "@/lib/api-observability";
+import { createRateLimit } from "@/lib/rate-limit";
+import { checkUrlSyntax, checkUrlWithDns, safeFetch } from "@/lib/url-safety";
 
-export const runtime = "edge";
+// node, not edge: the SSRF guard resolves hostnames before fetching them, and
+// DNS is not available on the edge runtime.
+export const runtime = "nodejs";
 
-const ratelimit = new Ratelimit({
-  redis: Redis.fromEnv(),
-  limiter: Ratelimit.slidingWindow(5, "1 m"),
-  analytics: true,
+const ratelimit = createRateLimit({
+  tokens: 5,
+  window: "1 m",
   prefix: "@prompt-generator/extract",
 });
 
 const MAX_CONTENT_LENGTH = 3000;
-const MAX_FETCH_BYTES = 500_000;
+const MAX_FETCH_BYTES = 2_000_000;
 const URL_TIMEOUT_MS = 4000;
 const ALLOWED_CONTENT_TYPES = [
   "text/html",
@@ -33,12 +34,45 @@ type ExtractionResult = { content: string; title: string; source: "jina" | "dire
 
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
+
+  // Validate before metering. Rate limiting first meant a malformed body burned
+  // a slot out of the user's window for a request that never reached a provider.
+  const parsed = await parseRequestBody(request, ExtractRequestSchema);
+  if (parsed.error) {
+    trackApiEvent({
+      route: "extract",
+      event: "validation_failed",
+      status: parsed.error.status,
+      durationMs: Date.now() - startedAt,
+    });
+    return parsed.error;
+  }
+
+  const { url } = parsed.data;
+
+  // Cheap syntax rejection also happens before metering — a blocked URL is a
+  // client mistake, not consumption.
+  const syntaxCheck = checkUrlSyntax(url);
+  if (!syntaxCheck.ok) {
+    trackApiEvent({
+      route: "extract",
+      event: "blocked_url",
+      status: 400,
+      durationMs: Date.now() - startedAt,
+      details: { reason: syntaxCheck.reason, host: safeHostname(url) },
+    });
+    return NextResponse.json(
+      { error: "This URL cannot be extracted for safety reasons." },
+      { status: 400 },
+    );
+  }
+
   const identifier = getClientIdentifier(request);
-  const limit = await ratelimit.limit(identifier);
+  const limit = await ratelimit.check(identifier);
 
   if (!limit.success) {
     const retryAfter = retryAfterSeconds(limit.reset);
-    await trackApiEvent({
+    trackApiEvent({
       route: "extract",
       event: "rate_limited",
       status: 429,
@@ -57,27 +91,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const parsed = await parseRequestBody(request, ExtractRequestSchema);
-  if (parsed.error) {
-    await trackApiEvent({
-      route: "extract",
-      event: "validation_failed",
-      status: parsed.error.status,
-      durationMs: Date.now() - startedAt,
-    });
-    return parsed.error;
-  }
-
-  const { url } = parsed.data;
-  const blockedReason = getBlockedUrlReason(url);
-
-  if (blockedReason) {
-    await trackApiEvent({
+  // The DNS-level check is the one that catches a public name pointing at a
+  // private address, so it runs before any outbound request is made.
+  const dnsCheck = await checkUrlWithDns(url);
+  if (!dnsCheck.ok) {
+    trackApiEvent({
       route: "extract",
       event: "blocked_url",
       status: 400,
       durationMs: Date.now() - startedAt,
-      details: { reason: blockedReason, host: safeHostname(url) },
+      details: { reason: dnsCheck.reason, host: safeHostname(url) },
     });
     return NextResponse.json(
       { error: "This URL cannot be extracted for safety reasons." },
@@ -89,7 +112,7 @@ export async function POST(request: NextRequest) {
     const result = (await tryJinaReader(url)) ?? (await tryDirectFetch(url));
 
     if (result) {
-      await trackApiEvent({
+      trackApiEvent({
         route: "extract",
         event: "succeeded",
         status: 200,
@@ -104,7 +127,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await trackApiEvent({
+    trackApiEvent({
       route: "extract",
       event: "no_content",
       status: 422,
@@ -116,7 +139,7 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   } catch (error) {
-    await trackApiEvent({
+    trackApiEvent({
       route: "extract",
       event: "failed",
       status: 500,
@@ -131,12 +154,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Jina's reader renders JS-heavy pages we cannot. It fetches from its own
+ * infrastructure, so the URL is validated before we hand it over — and that
+ * hand-off is disclosed in the privacy policy.
+ */
 async function tryJinaReader(url: string): Promise<ExtractionResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), URL_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`https://r.jina.ai/${url}`, {
+    // Encoded, not interpolated: a target containing "../" would otherwise
+    // rewrite the path we are requesting from Jina.
+    const response = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, {
       signal: controller.signal,
       headers: {
         Accept: "text/plain",
@@ -144,7 +174,7 @@ async function tryJinaReader(url: string): Promise<ExtractionResult> {
       },
     });
 
-    if (!response.ok || !isResponseSmallEnough(response)) return null;
+    if (!response.ok) return null;
 
     const text = await readTextWithinLimit(response, MAX_FETCH_BYTES);
     if (!text || text.trim().length < 50) return null;
@@ -166,17 +196,19 @@ async function tryDirectFetch(url: string): Promise<ExtractionResult> {
   const timeout = setTimeout(() => controller.abort(), URL_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
+    // safeFetch re-validates every redirect hop before following it.
+    const fetched = await safeFetch(url, {
       signal: controller.signal,
-      redirect: "follow",
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; PromptGeneratorBot/1.0)",
         Accept: "text/html,application/xhtml+xml,text/plain,text/markdown,application/json",
       },
     });
 
-    if (!response.ok || !isResponseSmallEnough(response)) return null;
-    if (getBlockedUrlReason(response.url)) return null;
+    if (!fetched.ok) return null;
+
+    const { response, finalUrl } = fetched;
+    if (!response.ok) return null;
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     if (contentType && !ALLOWED_CONTENT_TYPES.some((type) => contentType.includes(type))) {
@@ -187,9 +219,9 @@ async function tryDirectFetch(url: string): Promise<ExtractionResult> {
     if (!html) return null;
 
     const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-    const title = sanitizeTitle(titleMatch ? titleMatch[1] : new URL(response.url || url).hostname);
+    const title = sanitizeTitle(titleMatch ? titleMatch[1] : new URL(finalUrl).hostname);
     const textContent = stripHtml(html).slice(0, MAX_CONTENT_LENGTH);
-    if (!textContent.trim() || textContent.trim().length < 50) return null;
+    if (textContent.trim().length < 50) return null;
 
     return { content: textContent, title, source: "direct" };
   } catch {
@@ -199,11 +231,13 @@ async function tryDirectFetch(url: string): Promise<ExtractionResult> {
   }
 }
 
-function isResponseSmallEnough(response: Response) {
-  const contentLength = Number(response.headers.get("content-length") ?? 0);
-  return !contentLength || contentLength <= MAX_FETCH_BYTES;
-}
-
+/**
+ * Reads at most `maxBytes` and returns what arrived.
+ *
+ * This used to return null on overflow, throwing away a perfectly good page
+ * because its HTML was larger than the cap — and we only ever keep the first
+ * few thousand characters anyway. Truncating is the useful behaviour.
+ */
 async function readTextWithinLimit(response: Response, maxBytes: number): Promise<string | null> {
   if (!response.body) return null;
 
@@ -212,80 +246,26 @@ async function readTextWithinLimit(response: Response, maxBytes: number): Promis
   let receivedBytes = 0;
   let text = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    receivedBytes += value.byteLength;
-    if (receivedBytes > maxBytes) {
-      await reader.cancel();
-      return null;
+      receivedBytes += value.byteLength;
+      text += decoder.decode(value, { stream: true });
+
+      if (receivedBytes >= maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return text;
+      }
     }
-
-    text += decoder.decode(value, { stream: true });
+  } catch {
+    // Partial content still beats nothing.
+    return text || null;
   }
 
   text += decoder.decode();
   return text;
-}
-
-function getBlockedUrlReason(rawUrl: string): string | null {
-  let url: URL;
-
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    return "invalid_url";
-  }
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") return "unsupported_protocol";
-
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
-
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal") ||
-    host.endsWith(".lan") ||
-    host.endsWith(".home")
-  ) {
-    return "private_host";
-  }
-
-  if (
-    host === "::1" ||
-    host === "0.0.0.0" ||
-    host.startsWith("127.") ||
-    host.startsWith("10.") ||
-    host.startsWith("169.254.") ||
-    host.startsWith("192.168.") ||
-    isPrivate172(host) ||
-    isPrivateIpv6(host)
-  ) {
-    return "private_ip";
-  }
-
-  return null;
-}
-
-function isPrivate172(host: string): boolean {
-  const parts = host.split(".");
-  if (parts.length !== 4 || parts[0] !== "172") return false;
-
-  const second = Number(parts[1]);
-  return Number.isInteger(second) && second >= 16 && second <= 31;
-}
-
-function isPrivateIpv6(host: string): boolean {
-  if (!host.includes(":")) return false;
-
-  return (
-    host === "::1" ||
-    host.startsWith("fc") ||
-    host.startsWith("fd") ||
-    host.startsWith("fe80:")
-  );
 }
 
 function safeHostname(rawUrl: string): string {

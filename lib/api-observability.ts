@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { Redis } from "@upstash/redis";
 
 type RateLimitResult = {
@@ -83,9 +83,28 @@ export function logApiEvent(event: ApiLogEvent) {
   console.info(line);
 }
 
-export async function trackApiEvent(event: ApiLogEvent) {
+/**
+ * Log now, count later.
+ *
+ * The Redis pipeline used to be awaited inline, which put a round-trip in front
+ * of every response — including the streaming ones, where it landed squarely on
+ * time-to-first-token. `after()` runs it once the response is on its way
+ * (backed by waitUntil on Vercel), so metering no longer costs the user latency.
+ */
+export function trackApiEvent(event: ApiLogEvent): void {
   logApiEvent(event);
-  await recordUsageCounters(event);
+
+  const record = () =>
+    recordUsageCounters(event).catch(() => {
+      // recordUsageCounters already logs; never let telemetry surface as an error.
+    });
+
+  try {
+    after(record);
+  } catch {
+    // Outside a request scope (tests, scripts) `after` is unavailable.
+    void record();
+  }
 }
 
 async function recordUsageCounters(event: ApiLogEvent) {

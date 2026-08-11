@@ -180,7 +180,13 @@ export default function Home() {
     schema: GenerateSchemaObject,
     onFinish: ({ object }) => {
       const optimizedPrompt = object?.optimized_prompt?.trim();
-      if (!optimizedPrompt) return;
+      // A provider that dies mid-stream closes cleanly, so the response is a 200
+      // carrying truncated JSON and this lands with no usable prompt. Returning
+      // quietly left the spinner to stop with nothing on screen and no error.
+      if (!optimizedPrompt) {
+        setError("The model stopped before finishing. Give it another run.");
+        return;
+      }
 
       const resolvedRecs = resolveRecommendations(
         (object?.routing ?? {}) as Record<string, RoutingPick>,

@@ -82,6 +82,21 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
+      <Section title="Reading a link you paste">
+        <p>
+          If you paste a web address to pull its text into a prompt, we fetch that page so we can
+          extract its readable content. We first ask Jina AI&apos;s reader service (
+          <span className="font-mono text-sm">r.jina.ai</span>) to render it, which means the address
+          you pasted is sent to Jina AI under their terms; if that does not work, our own server
+          fetches the page directly.
+        </p>
+        <p>
+          Only the address is shared for this, never your prompt text. We keep at most the first few
+          thousand characters of the page, and only for as long as it takes to build your prompt. We
+          refuse addresses that point at private or internal networks.
+        </p>
+      </Section>
+
       <Section title="Permissions the extension asks for">
         <ul className="list-disc space-y-2 pl-5">
           <li>

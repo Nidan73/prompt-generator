@@ -5,26 +5,27 @@ import {
   REFINE_POOL,
   getPoolRuntimeStatus,
 } from "@/lib/provider-pool";
+import { isRateLimitStoreConfigured } from "@/lib/rate-limit";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 export function GET() {
-  const upstashConfigured = Boolean(
-    process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN,
-  );
+  const upstashConfigured = isRateLimitStoreConfigured();
   const pools = {
     generate: getPoolRuntimeStatus("generate", GENERATE_POOL),
     clarify: getPoolRuntimeStatus("clarify", CLARIFY_POOL),
     refine: getPoolRuntimeStatus("refine", REFINE_POOL),
   };
-  const hasGenerationProvider = pools.generate.configured > 0;
-  const ready = upstashConfigured && hasGenerationProvider;
+  // `usable` counts request-time OpenRouter discovery, which the static pools do
+  // not list — an OpenRouter-only deployment generates fine and must not be
+  // reported as degraded.
+  const ready = upstashConfigured && pools.generate.usable;
 
   return NextResponse.json(
     {
       status: ready ? "ok" : "degraded",
       timestamp: new Date().toISOString(),
-      runtime: "edge",
+      runtime: "nodejs",
       checks: {
         rateLimitStore: upstashConfigured ? "ok" : "missing",
         generation: poolStatus(pools.generate),
@@ -42,5 +43,7 @@ export function GET() {
 }
 
 function poolStatus(pool: ReturnType<typeof getPoolRuntimeStatus>) {
-  return pool.ready > 0 ? "ok" : "degraded";
+  if (pool.ready > 0) return "ok";
+  // Every static provider cooling down is still serviceable via discovery.
+  return pool.usable ? "degraded" : "unavailable";
 }

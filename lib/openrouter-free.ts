@@ -31,7 +31,12 @@ export type FreeModel = {
 
 const CATALOGUE_URL = "https://openrouter.ai/api/v1/models";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 6000;
+/**
+ * Deliberately short. This fetch can sit in front of a user's first token on a
+ * cold isolate, and OpenRouter models are the tail of the chain — waiting
+ * seconds for an optional fallback is a bad trade.
+ */
+const FETCH_TIMEOUT_MS = 3000;
 
 /** Keep the chain short; these are the tail of the rotation, not the front. */
 const MAX_MODELS_PER_POOL = 4;
@@ -152,13 +157,22 @@ async function getCatalogue(): Promise<CatalogueCache> {
   if (catalogueCache && catalogueCache.expiresAt > now) return catalogueCache;
   if (catalogueInFlight) return catalogueInFlight;
 
+  const stale = catalogueCache;
+
   catalogueInFlight = fetchCatalogue()
     .catch((error) => {
       console.warn(
         "OpenRouter catalogue unavailable, using last-known-good free models",
         error instanceof Error ? error.message : error,
       );
-      // Short TTL on the fallback so the next request retries the live list.
+
+      // Serving a slightly stale *live* list beats dropping back to IDs pinned
+      // in source — going stale-to-hardcoded is the exact failure this module
+      // exists to prevent. Only shorten the TTL so the next request retries.
+      if (stale && stale.source === "live" && stale.models.length > 0) {
+        return { ...stale, expiresAt: Date.now() + 5 * 60 * 1000 };
+      }
+
       return {
         models: [],
         source: "fallback" as const,
@@ -169,20 +183,66 @@ async function getCatalogue(): Promise<CatalogueCache> {
       catalogueCache = result;
       catalogueInFlight = null;
       return result;
+    })
+    .catch((error) => {
+      catalogueInFlight = null;
+      throw error;
     });
 
   return catalogueInFlight;
+}
+
+function lastKnownGood(structured: boolean): FreeModel[] {
+  return FALLBACK_FREE_MODELS.filter((model) => !structured || model.structured).slice(
+    0,
+    MAX_MODELS_PER_POOL,
+  );
+}
+
+/**
+ * Non-blocking variant: answer from cache, refresh in the background.
+ *
+ * Used when the static pools already have healthy providers, so discovery never
+ * costs the user latency for models that sit at the back of the chain anyway.
+ * Returns an empty list on a cold isolate — correct, because the caller has
+ * better options and the next request will have the warmed cache.
+ */
+export function peekFreeModels(options: { structured: boolean }): FreeModel[] {
+  const now = Date.now();
+
+  if (!catalogueCache || catalogueCache.expiresAt <= now) {
+    // Warm it for the requests behind this one; failures are already logged.
+    void getCatalogue().catch(() => undefined);
+  }
+
+  if (!catalogueCache) return [];
+  if (catalogueCache.source === "fallback") return lastKnownGood(options.structured);
+
+  return selectFreeModels(catalogueCache.models, options);
 }
 
 /** Free OpenRouter models available right now, best-context first. */
 export async function getFreeModels(options: { structured: boolean }): Promise<FreeModel[]> {
   const catalogue = await getCatalogue();
 
-  if (catalogue.source === "fallback") {
-    return FALLBACK_FREE_MODELS.filter(
-      (model) => !options.structured || model.structured,
-    ).slice(0, MAX_MODELS_PER_POOL);
+  if (catalogue.source === "fallback") return lastKnownGood(options.structured);
+
+  const selected = selectFreeModels(catalogue.models, options);
+
+  // A live fetch that selects nothing is not the same as OpenRouter having
+  // nothing: today only a handful of free models advertise structured output,
+  // so one policy change upstream would silently empty this list.
+  if (selected.length === 0) {
+    console.warn(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        event: "openrouter_selection_empty",
+        structured: options.structured,
+        catalogueSize: catalogue.models.length,
+      }),
+    );
+    return lastKnownGood(options.structured);
   }
 
-  return selectFreeModels(catalogue.models, options);
+  return selected;
 }

@@ -31,3 +31,6 @@ PROJECT_CONTEXT.md
 PROMO_VIDEO_SCRIPT.md
 
 .vercel
+
+# typescript incremental build cache
+*.tsbuildinfo
