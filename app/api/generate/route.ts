@@ -17,7 +17,7 @@ import {
 } from "@/lib/api-observability";
 import {
   GENERATE_POOL,
-  getRotatedChain,
+  getChain,
   recordProviderFailure,
   recordProviderSuccess,
 } from "@/lib/provider-pool";
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     }
 
     const systemPrompt = buildSystemPrompt(await getLiveModelLandscape());
-    const chain = getRotatedChain("generate", GENERATE_POOL);
+    const chain = await getChain("generate", GENERATE_POOL, { structured: true });
     let lastError: unknown = new Error("No API keys configured or all providers failed.");
     let fallbackCount = 0;
 

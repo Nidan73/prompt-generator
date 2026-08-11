@@ -7,6 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
+    "test": "vitest run tests/unit",
+    "test:watch": "vitest tests/unit",
     "test:e2e": "playwright test"
   },
   "dependencies": {

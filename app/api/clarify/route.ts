@@ -11,7 +11,7 @@ import {
 } from "@/lib/api-observability";
 import {
   CLARIFY_POOL,
-  getRotatedChain,
+  getChain,
   recordProviderFailure,
   recordProviderSuccess,
 } from "@/lib/provider-pool";
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const userContent = `PROMPT:\n${userPrompt}`;
-    const chain = getRotatedChain("clarify", CLARIFY_POOL);
+    const chain = await getChain("clarify", CLARIFY_POOL, { structured: true });
     let lastError: unknown = new Error("No API keys configured or all providers failed.");
     let fallbackCount = 0;
 

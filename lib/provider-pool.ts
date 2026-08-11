@@ -1,6 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
+import { getFreeModels } from "./openrouter-free";
 
 /**
  * Provider Pool — Round-Robin Load Balancer (AI SDK Streaming Version)
@@ -112,9 +113,8 @@ export const GENERATE_POOL: ProviderConfig[] = [
   { name: "Gemini 2.5 Flash", sdkModel: google("gemini-2.5-flash"), hasKey: !!process.env.GEMINI_API_KEY },
   { name: "Gemini 2.5 Flash Lite", sdkModel: google("gemini-2.5-flash-lite"), hasKey: !!process.env.GEMINI_API_KEY },
   { name: "Gemini 2.0 Flash", sdkModel: google("gemini-2.0-flash"), hasKey: !!process.env.GEMINI_API_KEY },
-  // ── OpenRouter (free safety net) ──
-  { name: "OR GPT-OSS 120B", sdkModel: openrouter("openai/gpt-oss-120b:free"), hasKey: !!process.env.OPENROUTER_API_KEY },
-  { name: "OR GPT-OSS 20B", sdkModel: openrouter("openai/gpt-oss-20b:free"), hasKey: !!process.env.OPENROUTER_API_KEY },
+  // OpenRouter free models are appended at request time by getChain() — their
+  // IDs change too often to pin here.
 ];
 
 // ─── CLARIFY Pool (lightweight, speed-first for guided questions) ──────────────
@@ -132,8 +132,7 @@ export const CLARIFY_POOL: ProviderConfig[] = [
   { name: "Gemini 2.5 Flash Lite", sdkModel: google("gemini-2.5-flash-lite"), hasKey: !!process.env.GEMINI_API_KEY },
   { name: "Gemini 2.5 Flash", sdkModel: google("gemini-2.5-flash"), hasKey: !!process.env.GEMINI_API_KEY },
   { name: "Gemini 2.0 Flash", sdkModel: google("gemini-2.0-flash"), hasKey: !!process.env.GEMINI_API_KEY },
-  // ── OpenRouter (free-tier fallback) ──
-  { name: "OR GPT-OSS 20B", sdkModel: openrouter("openai/gpt-oss-20b:free"), hasKey: !!process.env.OPENROUTER_API_KEY },
+  // OpenRouter free models are appended at request time by getChain().
 ];
 
 // ─── REFINE Pool (needs good instruction-following for structural edits) ───────
@@ -148,9 +147,7 @@ export const REFINE_POOL: ProviderConfig[] = [
   { name: "Gemini 2.5 Flash", sdkModel: google("gemini-2.5-flash"), hasKey: !!process.env.GEMINI_API_KEY },
   { name: "Gemini 2.5 Flash Lite", sdkModel: google("gemini-2.5-flash-lite"), hasKey: !!process.env.GEMINI_API_KEY },
   { name: "Gemini 3.1 Pro", sdkModel: google("gemini-3.1-pro-preview"), hasKey: !!process.env.GEMINI_API_KEY },
-  // ── OpenRouter (free-tier fallback) ──
-  { name: "OR GPT-OSS 120B", sdkModel: openrouter("openai/gpt-oss-120b:free"), hasKey: !!process.env.OPENROUTER_API_KEY },
-  { name: "OR Nemotron 120B", sdkModel: openrouter("nvidia/nemotron-3-super-120b-a12b:free"), hasKey: !!process.env.OPENROUTER_API_KEY },
+  // OpenRouter free models are appended at request time by getChain().
 ];
 
 // ─── Round-Robin Counter ───────────────────────────────────────────────────────
@@ -162,6 +159,48 @@ function getNextIndex(poolName: string, poolSize: number): number {
   const next = (current + 1) % poolSize;
   counters.set(poolName, next);
   return current;
+}
+
+// ─── OpenRouter Free Tier (discovered, not pinned) ─────────────────────────────
+
+/**
+ * Whatever OpenRouter is giving away right now, as pool entries. Appended to the
+ * end of a chain so it stays a safety net behind Groq and Gemini.
+ *
+ * `structured` must be true for any route using generateObject/streamObject:
+ * a model without structured output support fails mid-stream, after the HTTP
+ * response has already started.
+ */
+async function getOpenRouterFreeProviders(structured: boolean): Promise<ProviderConfig[]> {
+  if (!process.env.OPENROUTER_API_KEY) return [];
+
+  try {
+    const models = await getFreeModels({ structured });
+    return models.map((model) => ({
+      name: `OR ${model.id}`,
+      sdkModel: openrouter(model.id),
+      hasKey: true,
+    }));
+  } catch (error) {
+    console.warn(
+      "OpenRouter free model discovery failed; continuing without it",
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
+}
+
+/**
+ * The rotated chain for a request, including any free OpenRouter models that
+ * exist right now. Prefer this over getRotatedChain() at call sites.
+ */
+export async function getChain(
+  poolName: string,
+  pool: ProviderConfig[],
+  options: { structured: boolean },
+): Promise<ProviderConfig[]> {
+  const discovered = await getOpenRouterFreeProviders(options.structured);
+  return getRotatedChain(poolName, [...pool, ...discovered]);
 }
 
 export function getRotatedChain(poolName: string, pool: ProviderConfig[]): ProviderConfig[] {

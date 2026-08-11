@@ -12,7 +12,7 @@ import {
 } from "@/lib/api-observability";
 import {
   REFINE_POOL,
-  getRotatedChain,
+  getChain,
   recordProviderFailure,
   recordProviderSuccess,
 } from "@/lib/provider-pool";
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
   const userContent = `PROMPT:\n${currentPrompt.slice(0, 2000)}\n\nEDIT:\n${instruction.slice(0, 500)}`;
 
   try {
-    const chain = getRotatedChain("refine", REFINE_POOL);
+    const chain = await getChain("refine", REFINE_POOL, { structured: false });
     let lastError: unknown = new Error("No API keys configured or all providers failed.");
     let fallbackCount = 0;
 
