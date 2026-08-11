@@ -1,7 +1,9 @@
 "use client";
 
 import type { ComponentType } from "react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { APP_VERSION } from "@/lib/version";
 import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/components/theme-provider";
 import { saveToHistory, getHistory, clearHistory, type HistoryEntry } from "@/lib/prompt-history";
@@ -1222,7 +1224,14 @@ export default function Home() {
               Nidan Alam
             </a>
             <span className="mx-2 opacity-30">•</span>
-            <span className="text-xs tracking-wider opacity-60">v1.0.0</span>
+            <Link
+              href="/privacy"
+              className="font-semibold text-slate-900 transition hover:text-blue-600 dark:text-slate-200 dark:hover:text-blue-400"
+            >
+              Privacy
+            </Link>
+            <span className="mx-2 opacity-30">•</span>
+            <span className="text-xs tracking-wider opacity-60">v{APP_VERSION}</span>
           </p>
         </footer>
       </div>
