@@ -9,19 +9,27 @@ export const ADMIN_COOKIE_NAME = "btq_admin_token";
 const TOKEN_EXPIRY_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 function getSecretKey(): string {
-  // Reads ADMIN_PASSWORD or ADMIN_SECRET, or falls back to a deterministic hash
-  return (
+  const secret =
     process.env.ADMIN_PASSWORD ||
     process.env.ADMIN_SECRET ||
     process.env.OPENROUTER_API_KEY ||
-    process.env.GEMINI_API_KEY ||
-    "bhai-thik-kor-default-secret-key-change-me"
-  );
+    process.env.GEMINI_API_KEY;
+
+  if (secret) return secret;
+  if (process.env.NODE_ENV !== "production") return "bhai-thik-kor-dev-secret-key";
+  throw new Error("ADMIN_PASSWORD environment variable is not configured.");
 }
 
 export function verifyPassword(password: string): boolean {
-  const expected = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET || "admin123";
-  return password.trim() === expected.trim();
+  const expected = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET;
+  if (expected) {
+    return password.trim() === expected.trim();
+  }
+  // In local development only, allow default fallback if no env var set
+  if (process.env.NODE_ENV !== "production") {
+    return password.trim() === "admin123";
+  }
+  return false;
 }
 
 /** Base64URL encoder */

@@ -6,9 +6,16 @@ import {
 } from "../../lib/admin-auth";
 
 describe("Admin Auth & JWT", () => {
-  it("verifies the default password", () => {
+  it("verifies the default password in test/dev", () => {
     expect(verifyPassword("admin123")).toBe(true);
     expect(verifyPassword("wrongpassword")).toBe(false);
+  });
+
+  it("prioritizes ADMIN_PASSWORD from environment when set", () => {
+    process.env.ADMIN_PASSWORD = "super-secret-password-xyz";
+    expect(verifyPassword("super-secret-password-xyz")).toBe(true);
+    expect(verifyPassword("admin123")).toBe(false);
+    delete process.env.ADMIN_PASSWORD;
   });
 
   it("creates and verifies a valid JWT token", async () => {
