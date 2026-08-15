@@ -8,4 +8,4 @@
  * Semver, judged from a user's view of the site: patch for fixes, minor for new
  * capability, major for a change that breaks how the app or its API is used.
  */
-export const APP_VERSION = "1.0.1";
+export const APP_VERSION = "1.1.3";
