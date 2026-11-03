@@ -14,8 +14,9 @@
  * This file guarantees valid URLs and fresh model data.
  */
 
-import { Redis } from "@upstash/redis";
+import type { Redis } from "@upstash/redis";
 import { PLATFORM_REGISTRY } from "./platform-registry";
+import { redisFromEnvOrNull } from "./redis-env";
 
 export {
   PLATFORM_REGISTRY,
@@ -49,8 +50,8 @@ const NOISE_FILTERS = [
   "guard", "moderation", "shield",
   // Non-text modalities, not useful for prompt routing
   "embedding", "tts", "whisper", "audio", "speech",
-  // Image generation / image-focused variants, not text chat
-  "nano banana", "image gen", "image 2", "image preview",
+  // Image variants the modality filter does not already catch
+  "image gen", "image preview",
   // API-only variants, not available in consumer chat UIs
   "custom tools", "batch", "realtime",
   // Infrastructure duplicates
@@ -153,7 +154,7 @@ export function buildLandscapeFromCatalogue(models: OpenRouterModel[]): string |
   return landscape + `\nIMPORTANT: The list above shows the latest released models. Do NOT recommend older versions. Use the platform ID in brackets [like_this] for your routing picks.`;
 }
 
-const IMAGE_MODELS_PER_VENDOR = 2;
+const IMAGE_MODELS_PER_VENDOR = 3;
 
 /** Pure: image-output models from the catalogue, grouped by vendor, or null if none. */
 export function buildImageLandscapeFromCatalogue(models: OpenRouterModel[]): string | null {
@@ -196,6 +197,9 @@ const LANDSCAPE_RETRY_TTL_MS = 5 * 60 * 1000;
 const SNAPSHOT_KEY = "btq:model-landscape:last-good";
 const SNAPSHOT_TTL_SECONDS = 7 * 24 * 60 * 60;
 const NO_IMAGE_MODELS = "none listed";
+const SNAPSHOT_READ_TIMEOUT_MS = 1000;
+// A corrupt or oversized snapshot must never become prompt text.
+const SNAPSHOT_MAX_CHARS = 20000;
 
 let landscapeCache: LandscapeCache | null = null;
 let landscapeInFlight: Promise<LandscapeCache> | null = null;
@@ -205,7 +209,7 @@ function getSnapshotRedis(): Redis | null {
   if (snapshotRedis !== undefined) return snapshotRedis;
 
   try {
-    snapshotRedis = Redis.fromEnv();
+    snapshotRedis = redisFromEnvOrNull();
   } catch {
     snapshotRedis = null;
   }
@@ -230,13 +234,24 @@ async function loadSnapshot(): Promise<{ value: ModelLandscape; fetchedAt: numbe
   try {
     const redis = getSnapshotRedis();
     if (!redis) return null;
-    const raw = await redis.get<unknown>(SNAPSHOT_KEY);
+    // Bounded: a slow Redis must not hold up the request that needs the fallback.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const raw = await Promise.race([
+      redis.get<unknown>(SNAPSHOT_KEY),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), SNAPSHOT_READ_TIMEOUT_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    if (raw === null || raw === undefined) return null;
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (
       parsed &&
       typeof parsed === "object" &&
       typeof (parsed as ModelLandscape).models === "string" &&
-      typeof (parsed as ModelLandscape).imageModels === "string"
+      typeof (parsed as ModelLandscape).imageModels === "string" &&
+      (parsed as ModelLandscape).models.trim() !== "" &&
+      (parsed as ModelLandscape).models.length <= SNAPSHOT_MAX_CHARS &&
+      (parsed as ModelLandscape).imageModels.length <= SNAPSHOT_MAX_CHARS
     ) {
       const p = parsed as ModelLandscape & { fetchedAt?: number };
       return {
@@ -327,28 +342,33 @@ async function fetchModelLandscape(): Promise<LandscapeCache> {
  * and map each provider to its platform_id for the LLM.
  *
  * A short in-memory cache avoids paying this fetch on every generation request.
+ * It is stale-while-revalidate: an expired cache is returned at once and
+ * refreshed in the background, so only a true cold start waits on the network.
  * The fetch itself still uses Next/Vercel revalidation as a second cache layer,
  * and a Redis last-good snapshot covers cold starts during an OpenRouter outage.
  */
 export async function getLiveModelLandscape(): Promise<ModelLandscape> {
-  const now = Date.now();
-
-  if (landscapeCache && landscapeCache.expiresAt > now) {
+  if (landscapeCache) {
+    if (landscapeCache.expiresAt <= Date.now()) void refreshLandscape().catch(() => undefined);
     return landscapeCache.value;
   }
 
-  if (landscapeInFlight) {
-    return (await landscapeInFlight).value;
-  }
+  return (await refreshLandscape()).value;
+}
 
-  landscapeInFlight = fetchModelLandscape();
-
-  try {
-    landscapeCache = await landscapeInFlight;
-    return landscapeCache.value;
-  } finally {
-    landscapeInFlight = null;
+/** One refresh at a time; concurrent callers share the same promise. */
+function refreshLandscape(): Promise<LandscapeCache> {
+  if (!landscapeInFlight) {
+    landscapeInFlight = fetchModelLandscape()
+      .then((next) => {
+        landscapeCache = next;
+        return next;
+      })
+      .finally(() => {
+        landscapeInFlight = null;
+      });
   }
+  return landscapeInFlight;
 }
 
 export function getModelLandscapeCacheState() {

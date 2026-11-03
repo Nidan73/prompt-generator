@@ -77,6 +77,17 @@ describe("open-weight markers", () => {
     expect(out).not.toContain("Gemma D");
   });
 
+  it("leaves image naming to the modality filter, not to name matching", () => {
+    const out = buildLandscapeFromCatalogue([
+      { id: "google/gemini-a", name: "Google: Nano Banana Writer", created: 2, architecture: { output_modalities: ["text"] } },
+      { id: "google/gemini-b", name: "Google: Gemini Image 2 Helper", created: 1 },
+      { id: "google/gemini-c", name: "Google: Gemini Pix", created: 3, architecture: { output_modalities: ["image"] } },
+    ]);
+    expect(out).toContain("Nano Banana Writer");
+    expect(out).toContain("Gemini Image 2 Helper");
+    expect(out).not.toContain("Gemini Pix");
+  });
+
   it("excludes exp and experimental names", () => {
     const out = buildLandscapeFromCatalogue([
       { id: "deepseek/deepseek-a", name: "DeepSeek: V4 Flash Vision Exp", created: 3 },
@@ -95,7 +106,7 @@ describe("open-weight markers", () => {
 
 describe("buildImageLandscapeFromCatalogue", () => {
   const img = ["text", "image"];
-  it("selects image-output models, 2 newest per vendor, skipping preview and openrouter/", () => {
+  it("selects image-output models, 3 newest per vendor, skipping preview and openrouter/", () => {
     const out = buildImageLandscapeFromCatalogue([
       { id: "google/gemini-a-image", name: "Google: Nano Banana 1", created: 1, architecture: { output_modalities: img } },
       { id: "google/gemini-b-image", name: "Google: Nano Banana 2", created: 2, architecture: { output_modalities: img } },
@@ -106,7 +117,7 @@ describe("buildImageLandscapeFromCatalogue", () => {
       { id: "google/gemini-text", name: "Google: Gemini Text", created: 7, architecture: { output_modalities: ["text"] } },
     ]);
     expect(out).toBe(
-      "OpenAI GPT: GPT X Image → [chatgpt]\nGoogle Gemini: Nano Banana 3, Nano Banana 2 → [gemini]",
+      "OpenAI GPT: GPT X Image → [chatgpt]\nGoogle Gemini: Nano Banana 3, Nano Banana 2, Nano Banana 1 → [gemini]",
     );
   });
 
@@ -121,20 +132,32 @@ describe("buildImageLandscapeFromCatalogue", () => {
 describe("getLiveModelLandscape fallback order", () => {
   const redisGet = vi.fn();
   const redisSet = vi.fn();
+  const redisCtor = vi.fn();
 
   beforeEach(() => {
     vi.resetModules();
     vi.useFakeTimers();
     redisGet.mockReset();
     redisSet.mockReset().mockResolvedValue("OK");
+    redisCtor.mockClear();
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://fake.invalid");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "fake-token");
+    vi.stubEnv("KV_REST_API_URL", "");
+    vi.stubEnv("KV_REST_API_TOKEN", "");
     vi.doMock("@upstash/redis", () => ({
-      Redis: { fromEnv: () => ({ get: redisGet, set: redisSet }) },
+      Redis: class {
+        constructor() {
+          redisCtor();
+          return { get: redisGet, set: redisSet };
+        }
+      },
     }));
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.doUnmock("@upstash/redis");
   });
 
@@ -186,5 +209,113 @@ describe("getLiveModelLandscape fallback order", () => {
     expect(fb.models).toContain("Claude");
     expect(fb.imageModels).toBe("none listed");
     expect(mod.getModelLandscapeCacheState().source).toBe("fallback");
+  });
+  const snapshotCases: Array<[string, unknown]> = [
+    ["malformed JSON", "{not json"],
+    ["wrong shape", JSON.stringify({ models: 5, imageModels: "x" })],
+    ["empty models", JSON.stringify({ models: "   ", imageModels: "x", fetchedAt: 1 })],
+    ["oversized models", JSON.stringify({ models: "m".repeat(20001), imageModels: "x", fetchedAt: 1 })],
+    ["oversized image models", JSON.stringify({ models: "m", imageModels: "i".repeat(20001), fetchedAt: 1 })],
+    ["a bare number", 42],
+  ];
+
+  for (const [label, raw] of snapshotCases) {
+    it(`ignores a snapshot with ${label}`, async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+      redisGet.mockResolvedValue(raw);
+      const mod = await import("../../lib/ai-catalog");
+      const out = await mod.getLiveModelLandscape();
+      expect(out.models).toContain("Claude");
+      expect(mod.getModelLandscapeCacheState().source).toBe("fallback");
+    });
+  }
+
+  it("accepts a snapshot at exactly the size cap", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    const models = "m".repeat(20000);
+    redisGet.mockResolvedValue(JSON.stringify({ models, imageModels: "i".repeat(20000), fetchedAt: 1 }));
+    const mod = await import("../../lib/ai-catalog");
+    expect((await mod.getLiveModelLandscape()).models).toBe(models);
+    expect(mod.getModelLandscapeCacheState().source).toBe("snapshot");
+  });
+
+  it("builds no Redis client and falls back to static text when Redis env is empty", async () => {
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    const mod = await import("../../lib/ai-catalog");
+    const out = await mod.getLiveModelLandscape();
+    expect(out.models).toContain("Claude");
+    expect(redisCtor).not.toHaveBeenCalled();
+    expect(mod.getModelLandscapeCacheState().source).toBe("fallback");
+  });
+
+  it("gives up on a hung snapshot read after one second", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+    redisGet.mockReturnValue(new Promise(() => {}));
+    const mod = await import("../../lib/ai-catalog");
+    const pending = mod.getLiveModelLandscape();
+    await vi.advanceTimersByTimeAsync(1000);
+    const out = await pending;
+    expect(out.models).toContain("Claude");
+    expect(mod.getModelLandscapeCacheState().source).toBe("fallback");
+  });
+
+  it("returns an expired cache immediately and refreshes once in the background", async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const mod = await import("../../lib/ai-catalog");
+    const first = await mod.getLiveModelLandscape();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // The refresh stays pending so we can prove callers do not wait on it.
+    let release!: (v: unknown) => void;
+    const slow = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    vi.stubGlobal("fetch", slow);
+    vi.advanceTimersByTime(7 * 60 * 60 * 1000);
+
+    const a = await mod.getLiveModelLandscape();
+    const b = await mod.getLiveModelLandscape();
+    expect(a).toEqual(first);
+    expect(b).toEqual(first);
+    expect(slow).toHaveBeenCalledTimes(1);
+    expect(mod.getModelLandscapeCacheState().inFlight).toBe(true);
+
+    release({
+      ok: true,
+      json: async () => ({ data: [{ id: "openai/gpt-6", name: "OpenAI: GPT-6", created: 9 }] }),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mod.getModelLandscapeCacheState().inFlight).toBe(false);
+    expect((await mod.getLiveModelLandscape()).models).toContain("GPT-6");
+  });
+
+  it("blocks only on a true cold start", async () => {
+    let release!: (v: unknown) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      ),
+    );
+    const mod = await import("../../lib/ai-catalog");
+    let settled = false;
+    const pending = mod.getLiveModelLandscape().then((v) => {
+      settled = true;
+      return v;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    release({
+      ok: true,
+      json: async () => ({ data: [{ id: "openai/gpt-5", name: "OpenAI: GPT-5", created: 1 }] }),
+    });
+    expect((await pending).models).toContain("GPT-5");
   });
 });

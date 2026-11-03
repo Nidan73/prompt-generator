@@ -20,6 +20,7 @@ import { buildGenerateUserContent } from "@/lib/prompt-envelope";
 import { createRateLimit } from "@/lib/rate-limit";
 import {
   GENERATE_POOL,
+  GENERATE_PRIMARY_COUNT,
   getChain,
   recordProviderFailure,
   recordProviderSuccess,
@@ -94,7 +95,10 @@ export async function POST(request: NextRequest) {
       models: landscape.models,
       imageModels: landscape.imageModels,
     });
-    const chain = await getChain("generate", GENERATE_POOL, { structured: true });
+    const chain = await getChain("generate", GENERATE_POOL, {
+      structured: true,
+      primaryCount: GENERATE_PRIMARY_COUNT,
+    });
     let lastError: unknown = new Error("No API keys configured or all providers failed.");
     let fallbackCount = 0;
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getRotatedChain,
   PINNED_POOLS,
@@ -12,9 +12,15 @@ const fake = vi.hoisted(() => ({
   broken: false,
 }));
 
+// The redis module is mocked below, so these fake values never reach a server.
+vi.hoisted(() => {
+  process.env.UPSTASH_REDIS_REST_URL = "https://fake.invalid";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "fake-token";
+});
+
 vi.mock("@upstash/redis", () => ({
-  Redis: {
-    fromEnv() {
+  Redis: class {
+    constructor() {
       if (fake.broken) throw new Error("no redis env");
       return {
         hgetall: async (key: string) => fake.hashes.get(key) ?? null,
@@ -39,7 +45,7 @@ vi.mock("@upstash/redis", () => ({
         },
         expire: async () => 1,
       };
-    },
+    }
   },
 }));
 
@@ -129,6 +135,40 @@ describe("getRotatedChain", () => {
       const chain = getRotatedChain("test-order", pool);
       expect(new Set(chain.map((p) => p.name))).toEqual(new Set(["a", "b", "c"]));
     }
+  });
+});
+
+describe("getRotatedChain primaryCount", () => {
+  it("always leads with a primary and keeps the later entries after them", () => {
+    const pool = poolOf(["P1", "P2", "P3", "L1", "L2"]);
+    const firsts = new Set<string>();
+
+    for (let i = 0; i < 12; i += 1) {
+      const names = getRotatedChain("test-primary", pool, 3).map((p) => p.name);
+      firsts.add(names[0]);
+      expect(["P1", "P2", "P3"]).toContain(names[0]);
+      expect(names.slice(3)).toEqual(["L1", "L2"]);
+    }
+    expect(firsts).toEqual(new Set(["P1", "P2", "P3"]));
+  });
+
+  it("defaults to rotating the whole pool", () => {
+    const pool = poolOf(["a", "b", "c"]);
+    const firsts = new Set<string>();
+    for (let i = 0; i < 6; i += 1) firsts.add(getRotatedChain("test-default", pool)[0].name);
+    expect(firsts.size).toBe(3);
+  });
+});
+
+describe("generate pool primaries", () => {
+  it("rotates only the first three entries and exports the count", async () => {
+    const mod = await import("../../lib/provider-pool");
+    expect(mod.GENERATE_PRIMARY_COUNT).toBe(3);
+    expect(mod.GENERATE_POOL.slice(0, 3).map((p) => p.name)).toEqual([
+      "Groq GPT-OSS 120B",
+      "Groq GPT-OSS 20B",
+      "Gemini 3.6 Flash",
+    ]);
   });
 });
 
@@ -237,6 +277,11 @@ describe("getChain ordering and availability", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
+  afterEach(() => {
+    // doMock persists across tests in this file; later suites need the real module.
+    vi.doUnmock("../../lib/openrouter-free");
+  });
+
   it("always starts with a static entry and ends with the discovered ones", async () => {
     const { pool, availability } = await setup();
     availability.setAvailabilityFetch((async () => new Response("{}", { status: 500 })) as unknown as typeof fetch);
@@ -279,6 +324,64 @@ describe("getChain ordering and availability", () => {
     expect(names).toContain("A");
     expect(status.providers.find((p) => p.name === "B")?.status).toBe("unavailable");
     expect(status.ready).toBe(2);
+  });
+
+  it("does not count a retired entry as usable", async () => {
+    const { pool, availability } = await setup();
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    availability.setAvailabilityFetch((async () => json200({ data: [{ id: "other" }] })) as unknown as typeof fetch);
+    const statics = [entry("A"), entry("B")];
+
+    await availability.refreshAvailableModels("groq");
+    const status = pool.getPoolRuntimeStatus("ret", statics);
+
+    expect(status.providers.every((p) => p.status === "unavailable")).toBe(true);
+    expect(status.discoveredEnabled).toBe(false);
+    expect(status.usable).toBe(false);
+  });
+
+  it("stays usable through discovery when every static entry is retired", async () => {
+    const { pool, availability } = await setup();
+    availability.setAvailabilityFetch((async () => json200({ data: [{ id: "other" }] })) as unknown as typeof fetch);
+    const statics = [entry("A")];
+
+    await availability.refreshAvailableModels("groq");
+
+    expect(pool.getPoolRuntimeStatus("ret2", statics).usable).toBe(true);
+  });
+
+  it("rotates only the primary entries and keeps the rest after them", async () => {
+    const { pool, availability } = await setup();
+    availability.setAvailabilityFetch((async () => new Response("{}", { status: 500 })) as unknown as typeof fetch);
+    const statics = [entry("P1"), entry("P2"), entry("P3"), entry("L1"), entry("L2")];
+    const firsts = new Set<string>();
+
+    for (let i = 0; i < 9; i += 1) {
+      const names = (
+        await pool.getChain("prim", statics, { structured: false, primaryCount: 3 })
+      ).map((p) => p.name);
+      firsts.add(names[0]);
+      expect(["P1", "P2", "P3"]).toContain(names[0]);
+      expect(new Set(names.slice(0, 3))).toEqual(new Set(["P1", "P2", "P3"]));
+      expect(names.slice(3)).toEqual(["L1", "L2", "OR or/x:free", "OR or/y:free"]);
+    }
+    expect(firsts).toEqual(new Set(["P1", "P2", "P3"]));
+  });
+
+  it("falls to the later entries when every primary is cooling down", async () => {
+    const { pool, availability } = await setup();
+    availability.setAvailabilityFetch((async () => new Response("{}", { status: 500 })) as unknown as typeof fetch);
+    const statics = [entry("P1"), entry("P2"), entry("L1")];
+    for (const name of ["P1", "P2"]) {
+      pool.recordProviderFailure("primcd", name);
+      pool.recordProviderFailure("primcd", name);
+    }
+
+    const names = (
+      await pool.getChain("primcd", statics, { structured: false, primaryCount: 2 })
+    ).map((p) => p.name);
+
+    expect(names[0]).toBe("L1");
   });
 
   it("excludes nothing when the live list could not be fetched", async () => {

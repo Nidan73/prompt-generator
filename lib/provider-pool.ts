@@ -1,9 +1,10 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { Redis } from "@upstash/redis";
+import type { Redis } from "@upstash/redis";
 import type { LanguageModel } from "ai";
 import { getFreeModels, peekFreeModels } from "./openrouter-free";
 import { peekAvailableModelIds } from "./provider-availability";
+import { redisFromEnvOrNull } from "./redis-env";
 
 /**
  * Provider Pool: Round-Robin Load Balancer (AI SDK Streaming Version)
@@ -71,7 +72,7 @@ function getPoolRedis(): Redis | null {
   if (poolRedis !== undefined) return poolRedis;
 
   try {
-    poolRedis = Redis.fromEnv();
+    poolRedis = redisFromEnvOrNull();
   } catch {
     poolRedis = null;
   }
@@ -274,7 +275,8 @@ export function getPoolRuntimeStatus(poolName: string, pool: ProviderConfig[]) {
     coolingDown: providers.filter((provider) => provider.status === "cooling_down").length,
     /** OpenRouter models are resolved at request time and are not counted above. */
     discoveredEnabled,
-    usable: configured.length > 0 || discoveredEnabled,
+    // A retired entry cannot serve a request, so it does not make the pool usable.
+    usable: providers.some((provider) => provider.status !== "unavailable") || discoveredEnabled,
     providers,
   };
 }
@@ -290,6 +292,13 @@ function geminiModel(name: string, modelId: string): ProviderConfig {
 }
 
 // ─── GENERATE Pool (needs smart models for complex JSON + switchboard output) ──
+
+/**
+ * Only the first entries of the generate pool take turns at the front. The Lite
+ * models behind them are noticeably weaker, so they follow the rotated primaries
+ * instead of sharing the front slot.
+ */
+export const GENERATE_PRIMARY_COUNT = 3;
 
 export const GENERATE_POOL: ProviderConfig[] = [
   // Generate uses streamObject, so providers must support strict JSON schema.
@@ -406,8 +415,9 @@ async function getOpenRouterFreeProviders(
 export async function getChain(
   poolName: string,
   pool: ProviderConfig[],
-  options: { structured: boolean },
+  options: { structured: boolean; primaryCount?: number },
 ): Promise<ProviderConfig[]> {
+  const primaries = primarySet(pool, options.primaryCount);
   await syncSharedCooldowns();
 
   // Retired models are dropped; an unknown live list keeps the entry.
@@ -420,19 +430,28 @@ export async function getChain(
 
   // Free models are a safety net: never rotated in front of a healthy static entry.
   if (healthyStatic.length > 0) {
-    return [...getRotatedChain(poolName, healthyStatic), ...healthyDiscovered];
+    return [...rotateChain(poolName, healthyStatic, primaries), ...healthyDiscovered];
   }
 
   // Nothing static is healthy: discovered first, then every static entry as a last resort.
   if (healthyDiscovered.length > 0) {
-    return [...healthyDiscovered, ...getRotatedChain(poolName, configured)];
+    return [...healthyDiscovered, ...rotateChain(poolName, configured, primaries)];
   }
 
   // Nothing healthy at all: try everything configured rather than fail outright.
-  return [...getRotatedChain(poolName, configured), ...discovered];
+  return [...rotateChain(poolName, configured, primaries), ...discovered];
 }
 
-export function getRotatedChain(poolName: string, pool: ProviderConfig[]): ProviderConfig[] {
+/** The entries allowed to rotate to the front: the first primaryCount of the pool, all by default. */
+function primarySet(pool: ProviderConfig[], primaryCount?: number): Set<ProviderConfig> {
+  return new Set(primaryCount === undefined ? pool : pool.slice(0, primaryCount));
+}
+
+function rotateChain(
+  poolName: string,
+  pool: ProviderConfig[],
+  primaries: Set<ProviderConfig>,
+): ProviderConfig[] {
   // Filter out providers with no API key configured
   const configured = pool.filter((p) => p.hasKey);
   if (configured.length === 0) return [];
@@ -440,6 +459,18 @@ export function getRotatedChain(poolName: string, pool: ProviderConfig[]): Provi
   const healthy = configured.filter((p) => !isCoolingDown(poolName, p.name));
   const available = healthy.length > 0 ? healthy : configured;
 
-  const startIndex = getNextIndex(poolName, available.length);
-  return [...available.slice(startIndex), ...available.slice(0, startIndex)];
+  const rotating = available.filter((p) => primaries.has(p));
+  const rest = available.filter((p) => !primaries.has(p));
+  if (rotating.length === 0) return rest;
+
+  const startIndex = getNextIndex(poolName, rotating.length);
+  return [...rotating.slice(startIndex), ...rotating.slice(0, startIndex), ...rest];
+}
+
+export function getRotatedChain(
+  poolName: string,
+  pool: ProviderConfig[],
+  primaryCount?: number,
+): ProviderConfig[] {
+  return rotateChain(poolName, pool, primarySet(pool, primaryCount));
 }

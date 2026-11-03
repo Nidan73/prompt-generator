@@ -78,12 +78,39 @@ type PoolStatus = {
   usable: boolean;
   providers: Array<{
     name: string;
-    status: "ready" | "cooling_down";
+    status: "ready" | "cooling_down" | "unavailable";
     failures: number;
     coolingDownForMs: number;
     lastLatencyMs?: number;
   }>;
 };
+
+type PoolProvider = PoolStatus["providers"][number];
+
+function ProviderStatusBadge({ provider }: { provider: PoolProvider }) {
+  const style =
+    provider.status === "ready"
+      ? { badge: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20", dot: "bg-emerald-400" }
+      : provider.status === "unavailable"
+        ? { badge: "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20", dot: "bg-zinc-500" }
+        : {
+            badge: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
+            dot: "bg-amber-400 animate-pulse",
+          };
+  const label =
+    provider.status === "ready"
+      ? "Ready"
+      : provider.status === "unavailable"
+        ? "Retired (not in live list)"
+        : `Cooling Down (${Math.round(provider.coolingDownForMs / 1000)}s)`;
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${style.badge}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+      {label}
+    </span>
+  );
+}
 
 export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
@@ -657,16 +684,7 @@ export default function AdminPage() {
                     <td className="py-3 px-6 font-semibold text-emerald-400">Generate (Normal)</td>
                     <td className="py-3 px-6 font-medium text-white">{p.name}</td>
                     <td className="py-3 px-6">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${
-                          p.status === "ready"
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                            : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${p.status === "ready" ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
-                        {p.status === "ready" ? "Ready" : `Cooling Down (${Math.round(p.coolingDownForMs / 1000)}s)`}
-                      </span>
+                      <ProviderStatusBadge provider={p} />
                     </td>
                     <td className="py-3 px-6 text-zinc-400">{p.failures}</td>
                     <td className="py-3 px-6 text-zinc-400">{p.lastLatencyMs ? `${p.lastLatencyMs} ms` : "n/a"}</td>
@@ -678,16 +696,7 @@ export default function AdminPage() {
                     <td className="py-3 px-6 font-semibold text-sky-400">Clarify (Guided)</td>
                     <td className="py-3 px-6 font-medium text-white">{p.name}</td>
                     <td className="py-3 px-6">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${
-                          p.status === "ready"
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                            : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${p.status === "ready" ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
-                        {p.status === "ready" ? "Ready" : `Cooling Down (${Math.round(p.coolingDownForMs / 1000)}s)`}
-                      </span>
+                      <ProviderStatusBadge provider={p} />
                     </td>
                     <td className="py-3 px-6 text-zinc-400">{p.failures}</td>
                     <td className="py-3 px-6 text-zinc-400">{p.lastLatencyMs ? `${p.lastLatencyMs} ms` : "n/a"}</td>

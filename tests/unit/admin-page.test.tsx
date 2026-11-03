@@ -77,6 +77,24 @@ describe("AdminPage", () => {
     await waitFor(() => expect(status.textContent).toContain(message));
   });
 
+  it("shows a retired model as neutral, not as a cooling down one", async () => {
+    const retiredPool = {
+      ...pool,
+      providers: [{ name: "old-model", status: "unavailable", failures: 0, coolingDownForMs: 0 }],
+    };
+    fetchMock.mockResolvedValueOnce(
+      res(200, { ...payload(), pools: { generate: retiredPool, clarify: retiredPool, refine: retiredPool } }),
+    );
+    render(<AdminPage />);
+
+    const badges = await screen.findAllByText("Retired (not in live list)");
+    expect(badges.length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Cooling Down/)).toBeNull();
+    const badge = badges[0].closest("span.inline-flex") as HTMLElement;
+    expect(badge.className).not.toContain("amber");
+    expect(badge.innerHTML).not.toContain("animate-pulse");
+  });
+
   it("keeps data and shows a banner when a refresh fails", async () => {
     fetchMock.mockResolvedValueOnce(res(200, payload()));
     render(<AdminPage />);
