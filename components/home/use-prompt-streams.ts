@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
 import { GenerateSchemaObject } from "@/lib/generate-schema";
 import { resolveRecommendations } from "@/lib/platform-registry";
+import { parseApiError, type ParsedApiError } from "@/lib/home-errors";
 import { saveToHistory, getHistory, type HistoryEntry } from "@/lib/prompt-history";
 import type { DispatcherResponse } from "./types";
 
@@ -23,6 +24,7 @@ type PromptStreamsOptions = {
   trimmedPrompt: string;
   setResult: Dispatch<SetStateAction<DispatcherResponse | null>>;
   setError: Dispatch<SetStateAction<string>>;
+  reportApiError: (error: ParsedApiError, fallback: string) => void;
   setHistory: Dispatch<SetStateAction<HistoryEntry[]>>;
   setRefineInput: Dispatch<SetStateAction<string>>;
 };
@@ -33,6 +35,7 @@ export function usePromptStreams({
   trimmedPrompt,
   setResult,
   setError,
+  reportApiError,
   setHistory,
   setRefineInput,
 }: PromptStreamsOptions) {
@@ -69,8 +72,8 @@ export function usePromptStreams({
       });
       setHistory(getHistory());
     },
-    onError: () => {
-      setError("Generation failed. Give it another run in a moment.");
+    onError: (error) => {
+      reportApiError(parseApiError(error), "Generation failed. Give it another run in a moment.");
     }
   });
 
@@ -94,8 +97,8 @@ export function usePromptStreams({
       }
       setRefineInput("");
     },
-    onError: () => {
-      setError("Refinement failed. Try again in a moment.");
+    onError: (error) => {
+      reportApiError(parseApiError(error), "Refinement failed. Try again in a moment.");
     }
   });
 

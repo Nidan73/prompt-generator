@@ -198,3 +198,50 @@ test("theme toggle persists dark mode class and mobile layout renders core workf
     expect(horizontalOverflow).toBe(false);
   }
 });
+
+test("Ctrl+Enter sends exactly the prompt typed key by key", async ({ page }) => {
+  const generateRequests: Array<{ prompt?: string }> = [];
+
+  await page.route("**/api/generate", async (route) => {
+    generateRequests.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 200,
+      contentType: "text/plain; charset=utf-8",
+      body: JSON.stringify(generateResponse),
+    });
+  });
+
+  await page.goto("/");
+  const textarea = page.getByPlaceholder(
+    "Example: Build a chrome extension that will help me to track my time",
+  );
+  await textarea.click();
+  await textarea.pressSequentially("build a portfolio site with dark mode");
+  await page.keyboard.press("Control+Enter");
+
+  await expect(page.getByText("Build a production-ready test prompt")).toBeVisible();
+  expect(generateRequests).toHaveLength(1);
+  expect(generateRequests[0]?.prompt).toBe("build a portfolio site with dark mode");
+});
+
+test("a 429 from generate starts the cooldown and shows the cooldown message", async ({ page }) => {
+  await page.route("**/api/generate", async (route) => {
+    await route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "Daily prompt generation limit reached. Please try again tomorrow.",
+        retryAfter: 30,
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page
+    .getByPlaceholder("Example: Build a chrome extension that will help me to track my time")
+    .fill("Create a production readiness checklist for a prompt generation app");
+  await page.getByRole("button", { name: /generate prompt/i }).click();
+
+  await expect(page.getByText(/\d+s cooldown/)).toBeVisible();
+  await expect(page.getByText("Cooling down this IP before the next request.")).toBeVisible();
+});

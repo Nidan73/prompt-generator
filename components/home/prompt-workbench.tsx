@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getHistory, clearHistory, type HistoryEntry } from "@/lib/prompt-history";
 import { buildApiModeOutput } from "@/lib/api-mode";
 import { PROMPT_MAX_CHARS } from "@/lib/limits";
@@ -13,16 +13,12 @@ import { RoutingPanel } from "./routing-panel";
 import { SharedPromptPanel } from "./shared-prompt-panel";
 import type { ClarifyingQuestion, DispatcherResponse, Recommendation, RecommendationTier } from "./types";
 import { useClipboardActions } from "./use-clipboard-actions";
+import { useCooldown } from "./use-cooldown";
 import { useGuidedMode } from "./use-guided-mode";
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts";
 import { usePromptStreams } from "./use-prompt-streams";
 import { useSharedPrompt } from "./use-shared-prompt";
 import { WorkbenchHeader } from "./workbench-header";
-
-type ApiError = {
-  error?: string;
-  retryAfter?: number;
-};
 
 type PromptWorkbenchProps = {
   // Server-rendered sections that sit around and between the interactive parts.
@@ -53,8 +49,10 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   const [isGuidedModeEnabled, setIsGuidedModeEnabled] = useState(false);
   const [isClarifying, setIsClarifying] = useState(false);
   const [isLoadingManual, setIsLoadingManual] = useState(false);
-  const [cooldownTimer, setCooldownTimer] = useState(0);
   const [error, setError] = useState("");
+  const { cooldownTimer, isCoolingDown, reportApiError } = useCooldown(setError);
+  // Bumped per clarify request and on Reset, so a superseded response is dropped.
+  const clarifyRequestRef = useRef(0);
 
   // Feature: History
   const [showHistory, setShowHistory] = useState(false);
@@ -80,7 +78,6 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   const wordCount = trimmedPrompt ? trimmedPrompt.split(/\s+/).length : 0;
   const hasPrompt = trimmedPrompt.length > 0;
   const hasEnoughContext = wordCount >= 3 && !isPromptTooLong;
-  const isCoolingDown = cooldownTimer > 0;
 
   const {
     submitGenerate,
@@ -90,20 +87,9 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
     displayPrompt,
     displayResult,
     displayRecommendations,
-  } = usePromptStreams({ result, trimmedPrompt, setResult, setError, setHistory, setRefineInput });
+  } = usePromptStreams({ result, trimmedPrompt, setResult, setError, reportApiError, setHistory, setRefineInput });
   const isCurrentlyLoading = isLoadingManual || isGeneratingStream || isRefiningStream;
-
-  useEffect(() => {
-    if (!isCoolingDown) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setCooldownTimer((current) => Math.max(0, current - 1));
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [isCoolingDown]);
+  const isGenerateDisabled = !hasEnoughContext || isClarifying || isCurrentlyLoading || isCoolingDown;
 
   // Load history on mount
   useEffect(() => {
@@ -115,27 +101,31 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   }, []);
 
   useKeyboardShortcuts({
-    hasEnoughContext,
-    isCurrentlyLoading,
-    isCoolingDown,
-    isGuidedModeEnabled,
-    isGuided,
-    result,
-    outputMode,
-    requestClarifications,
-    generatePrompt,
-    getApiModeOutput,
-    setCopied,
-    copyTimeoutRef,
-    setShowHistory,
-    setHistory,
+    onGenerate: generateFromShortcut,
+    onCopy: copyOutput,
+    onToggleHistory: () => {
+      setShowHistory((open) => !open);
+      setHistory(getHistory());
+    },
   });
 
+  // Same rules as the visible buttons: Guided Mode needs every question answered first.
+  function generateFromShortcut() {
+    if (isGenerateDisabled) return;
+
+    if (isGuidedModeEnabled && !isGuided) {
+      void requestClarifications();
+    } else if (!isGuided || hasCompletedGuidedFlow) {
+      void generatePrompt();
+    }
+  }
+
   async function requestClarifications() {
-    if (!hasEnoughContext || isCoolingDown) {
+    if (isGenerateDisabled) {
       return;
     }
 
+    const requestId = ++clarifyRequestRef.current;
     setIsClarifying(true);
     setError("");
     setResult(null);
@@ -148,22 +138,33 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
       });
 
       const payload = await response.json();
+      if (requestId !== clarifyRequestRef.current) return;
 
       if (!response.ok) {
-        handleApiError(response.status, payload);
+        reportApiError(
+          {
+            message: payload.error,
+            retryAfter: response.status === 429 ? payload.retryAfter : undefined,
+          },
+          "The dispatcher could not complete that request.",
+        );
         return;
       }
 
       startGuidedMode(payload as ClarifyingQuestion[]);
     } catch {
-      setError("Guided Mode could not start. Try direct generation.");
+      if (requestId === clarifyRequestRef.current) {
+        setError("Guided Mode could not start. Try direct generation.");
+      }
     } finally {
-      setIsClarifying(false);
+      if (requestId === clarifyRequestRef.current) {
+        setIsClarifying(false);
+      }
     }
   }
 
   async function generatePrompt() {
-    if (!hasEnoughContext || isCoolingDown || isCurrentlyLoading) {
+    if (isGenerateDisabled) {
       return;
     }
 
@@ -235,14 +236,11 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   }
 
 
-  function handleApiError(status: number, payload: ApiError) {
-    if (status === 429 && typeof payload.retryAfter === "number") {
-      setCooldownTimer(Math.max(1, Math.ceil(payload.retryAfter)));
-      setError("Cooling down this IP before the next request.");
-      return;
-    }
-
-    setError(payload.error ?? "The dispatcher could not complete that request.");
+  function resetGuided() {
+    // Invalidate any clarify request still in flight before clearing the questions.
+    clarifyRequestRef.current += 1;
+    setIsClarifying(false);
+    resetGuidedMode();
   }
 
   function loadFromHistory(entry: HistoryEntry) {
@@ -268,7 +266,6 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   }
 
   const activeRecommendation = displayRecommendations?.[activeTab];
-  const isGenerateDisabled = !hasEnoughContext || isClarifying || isCurrentlyLoading || isCoolingDown;
 
   return (
     <main className="min-h-screen overflow-x-hidden transition-colors">
@@ -337,7 +334,7 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
             isGenerateDisabled={isGenerateDisabled}
             isCoolingDown={isCoolingDown}
             cooldownTimer={cooldownTimer}
-            onReset={resetGuidedMode}
+            onReset={resetGuided}
             onChooseAnswer={chooseAnswer}
             onUpdateCustomAnswer={updateCustomAnswer}
             onGenerate={generatePrompt}

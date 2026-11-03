@@ -87,7 +87,6 @@ export function PromptComposer({
       <textarea
         id="prompt"
         value={prompt}
-        maxLength={PROMPT_MAX_CHARS}
         onChange={(event) => onPromptChange(event.target.value)}
         onFocus={() => {
           // On mobile, wait for keyboard to fully open, then scroll the buttons into view so they 'bump up'
