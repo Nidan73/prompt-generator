@@ -7,7 +7,7 @@ import {
   getPoolRuntimeStatus,
   syncSharedCooldowns,
 } from "@/lib/provider-pool";
-import { Redis } from "@upstash/redis";
+import { redisFromEnvOrNull } from "@/lib/redis-env";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -151,7 +151,9 @@ async function fetchGeminiHealth() {
 
 async function fetchRedisMetrics() {
   try {
-    const redis = Redis.fromEnv();
+    const redis = redisFromEnvOrNull();
+    // No store configured: the catch below reports it as unavailable.
+    if (!redis) throw new Error("Redis is not configured");
     const today = new Date().toISOString().slice(0, 10);
 
     const routes = ["generate", "clarify", "refine", "extract"];

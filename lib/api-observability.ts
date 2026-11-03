@@ -1,7 +1,8 @@
 import { after, type NextRequest } from "next/server";
-import { Redis } from "@upstash/redis";
+import type { Redis } from "@upstash/redis";
 import { InvalidOutputError } from "./clarify-questions";
 import { parseIpv6 } from "./ip-address";
+import { redisFromEnvOrNull } from "./redis-env";
 
 type RateLimitResult = {
   limit: number;
@@ -28,7 +29,7 @@ function getMetricsRedis() {
   if (metricsRedis !== undefined) return metricsRedis;
 
   try {
-    metricsRedis = Redis.fromEnv();
+    metricsRedis = redisFromEnvOrNull();
   } catch {
     metricsRedis = null;
   }

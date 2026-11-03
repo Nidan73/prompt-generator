@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { checkRateLimits, type LimitDecision, type RateLimitHandle } from "../../lib/rate-limit";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { checkRateLimits, isRateLimitStoreConfigured, type LimitDecision, type RateLimitHandle } from "../../lib/rate-limit";
 
 function decision(overrides: Partial<LimitDecision>): LimitDecision {
   return {
@@ -50,5 +50,26 @@ describe("checkRateLimits", () => {
 
     expect(result.success).toBe(false);
     expect(result.scope).toBe("day");
+  });
+});
+
+describe("isRateLimitStoreConfigured", () => {
+  const names = ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_URL", "KV_REST_API_TOKEN"];
+  const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+
+  afterEach(() => {
+    for (const n of names) {
+      if (saved[n] === undefined) delete process.env[n];
+      else process.env[n] = saved[n];
+    }
+  });
+
+  it("matches the shared env helper, KV names included", () => {
+    for (const n of names) process.env[n] = "";
+    expect(isRateLimitStoreConfigured()).toBe(false);
+    process.env.KV_REST_API_URL = "https://k.upstash.io";
+    expect(isRateLimitStoreConfigured()).toBe(false);
+    process.env.KV_REST_API_TOKEN = "t";
+    expect(isRateLimitStoreConfigured()).toBe(true);
   });
 });

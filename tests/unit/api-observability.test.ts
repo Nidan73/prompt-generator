@@ -5,7 +5,11 @@ const exec = vi.fn(async () => []);
 const pipelineStub = { incr: vi.fn(), incrby: vi.fn(), expire: vi.fn(), exec };
 
 vi.mock("@upstash/redis", () => ({
-  Redis: { fromEnv: () => ({ pipeline: () => pipelineStub }) },
+  Redis: class {
+    pipeline() {
+      return pipelineStub;
+    }
+  },
 }));
 
 // Throwing forces trackApiEvent onto its synchronous fallback path.

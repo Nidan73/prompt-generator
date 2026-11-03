@@ -1,18 +1,20 @@
 /**
  * Rate Limiter Construction
  *
- * `Redis.fromEnv()` throws when the Upstash variables are absent. Called at
- * module scope, as every route used to, that turns a missing env var into an
- * import-time crash, so the route 500s before its handler ever runs and the
- * error says nothing about configuration.
+ * Building a Redis client at module scope, as every route used to, ties import
+ * time to the environment, and `Redis.fromEnv()` does not even fail cleanly:
+ * with the variables absent or empty it builds a client with an empty url that
+ * errors on every call.
  *
- * Here the store is built lazily and the failure is contained: routes keep
- * serving, /api/health reports the store as missing, and each request is logged
- * as unmetered rather than silently dropped.
+ * Here the store is built lazily through redisFromEnvOrNull(), which returns
+ * null when the variables are missing: routes keep serving, /api/health reports
+ * the store as missing, and each request is logged as unmetered rather than
+ * silently dropped.
  */
 
 import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+import type { Redis } from "@upstash/redis";
+import { redisFromEnvOrNull } from "./redis-env";
 
 export type LimitDecision = {
   success: boolean;
@@ -33,8 +35,12 @@ function getRedis(): Redis | null {
   if (sharedRedis !== undefined) return sharedRedis;
 
   try {
-    sharedRedis = Redis.fromEnv();
+    sharedRedis = redisFromEnvOrNull();
   } catch {
+    sharedRedis = null;
+  }
+
+  if (!sharedRedis) {
     console.warn(
       JSON.stringify({
         scope: "bhai-thik-kor",
@@ -42,14 +48,16 @@ function getRedis(): Redis | null {
         detail: "Upstash env vars missing; requests will not be rate limited",
       }),
     );
-    sharedRedis = null;
   }
 
   return sharedRedis;
 }
 
 export function isRateLimitStoreConfigured(): boolean {
-  return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+  return Boolean(
+    (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL) &&
+      (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN),
+  );
 }
 
 /** An allow-everything decision, used whenever the store cannot answer. */
