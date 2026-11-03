@@ -11,6 +11,7 @@
     "test": "vitest run tests/unit",
     "test:watch": "vitest tests/unit",
     "test:live": "vitest run tests/live",
+    "test:eval": "vitest run tests/eval",
     "test:e2e": "playwright test"
   },
   "dependencies": {
