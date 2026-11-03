@@ -63,7 +63,9 @@ export async function POST(request: NextRequest) {
       if (geminiKey) {
         const start = Date.now();
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
+          const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+            headers: { "x-goog-api-key": geminiKey },
+          });
           results.gemini = { ok: res.ok, latencyMs: Date.now() - start, status: res.status };
         } catch {
           results.gemini = { ok: false, latencyMs: Date.now() - start };

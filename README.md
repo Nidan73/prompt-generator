@@ -47,9 +47,10 @@ GROQ_API_KEY=
 GEMINI_API_KEY=
 OPENROUTER_API_KEY=
 ADMIN_PASSWORD=
+ADMIN_SESSION_SECRET=
 ```
 
-One provider key is enough to start; each extra key adds models to the pool. `ADMIN_PASSWORD` is only needed for the `/admin` page.
+One provider key is enough to start; each extra key adds models to the pool. `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET` are only needed for the `/admin` page. The session secret signs admin cookies and must be at least 32 random characters in production (for example `openssl rand -base64 48`); it is never derived from the password or a provider key.
 
 ```bash
 npm install

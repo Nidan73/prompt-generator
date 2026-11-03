@@ -1,35 +1,57 @@
 /**
- * Admin Authentication — Zero-Dependency Web Crypto JWT
+ * Admin Authentication: zero-dependency HS256 JWT on Web Crypto.
  *
- * Uses native Web Crypto API (HMAC-SHA256) available in Node.js 16+, Next.js,
- * and edge runtimes. No external npm dependencies required.
+ * Sessions are signed with ADMIN_SESSION_SECRET only. Requests authenticate
+ * with a Bearer token or the httpOnly cookie; passwords never travel in a URL.
  */
+
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export const ADMIN_COOKIE_NAME = "btq_admin_token";
 const TOKEN_EXPIRY_SECONDS = 60 * 60 * 24 * 7; // 7 days
+const MIN_SESSION_SECRET_LENGTH = 32;
+const DEV_SESSION_SECRET = "bhai-thik-kor-dev-session-secret-not-for-production";
 
+/** Thrown when the deployment lacks a usable admin session secret. */
+export class AdminConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AdminConfigError";
+  }
+}
+
+/**
+ * The session key is its own secret on purpose: signing with the password or a
+ * provider API key would let a leaked or rotated key forge or kill admin
+ * sessions, and would tie session lifetime to credentials used elsewhere.
+ */
 function getSecretKey(): string {
-  const secret =
-    process.env.ADMIN_PASSWORD ||
-    process.env.ADMIN_SECRET ||
-    process.env.OPENROUTER_API_KEY ||
-    process.env.GEMINI_API_KEY;
+  const secret = process.env.ADMIN_SESSION_SECRET;
 
-  if (secret) return secret;
-  if (process.env.NODE_ENV !== "production") return "bhai-thik-kor-dev-secret-key";
-  throw new Error("ADMIN_PASSWORD environment variable is not configured.");
+  if (process.env.NODE_ENV === "production") {
+    if (!secret || secret.length < MIN_SESSION_SECRET_LENGTH) {
+      throw new AdminConfigError(
+        `ADMIN_SESSION_SECRET must be set to at least ${MIN_SESSION_SECRET_LENGTH} characters.`,
+      );
+    }
+    return secret;
+  }
+
+  return secret || DEV_SESSION_SECRET;
+}
+
+function sha256(value: string): Buffer {
+  return createHash("sha256").update(value).digest();
 }
 
 export function verifyPassword(password: string): boolean {
+  // ADMIN_SECRET is a legacy alias for ADMIN_PASSWORD, kept so old deployments still log in.
   const expected = process.env.ADMIN_PASSWORD || process.env.ADMIN_SECRET;
-  if (expected) {
-    return password.trim() === expected.trim();
-  }
-  // In local development only, allow default fallback if no env var set
-  if (process.env.NODE_ENV !== "production") {
-    return password.trim() === "admin123";
-  }
-  return false;
+  if (!expected || typeof password !== "string") return false;
+
+  // Digesting first gives equal-length buffers, so timingSafeEqual cannot throw
+  // and the comparison time does not depend on where the inputs differ.
+  return timingSafeEqual(sha256(password.trim()), sha256(expected.trim()));
 }
 
 /** Base64URL encoder */
@@ -106,7 +128,7 @@ export async function verifyAdminToken(token: string): Promise<boolean> {
   try {
     const payload: AdminJwtPayload = JSON.parse(base64UrlDecode(encodedPayload));
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) return false;
+    if (typeof payload.exp !== "number" || payload.exp < now) return false;
     if (payload.role !== "admin") return false;
 
     const secret = getSecretKey();
@@ -136,24 +158,23 @@ export async function isAdminAuthorized(request: Request): Promise<boolean> {
   // 2. Check Cookie
   const cookieHeader = request.headers.get("cookie");
   if (cookieHeader) {
-    const cookies = Object.fromEntries(
-      cookieHeader.split(";").map((c) => {
-        const [k, ...v] = c.trim().split("=");
-        return [k, decodeURIComponent(v.join("="))];
-      }),
-    );
-    const token = cookies[ADMIN_COOKIE_NAME];
+    const token = readCookie(cookieHeader, ADMIN_COOKIE_NAME);
     if (token && (await verifyAdminToken(token))) return true;
   }
 
-  // 3. Fallback: Direct query param ?key=
-  try {
-    const url = new URL(request.url);
-    const key = url.searchParams.get("key");
-    if (key && verifyPassword(key)) return true;
-  } catch {
-    // Ignore URL parse errors
-  }
-
   return false;
+}
+
+/** Cookie values are attacker-controlled; a bad escape must skip the value, not throw. */
+function readCookie(header: string, name: string): string | undefined {
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key !== name) continue;
+    try {
+      return decodeURIComponent(rest.join("="));
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
 }

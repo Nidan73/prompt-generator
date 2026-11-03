@@ -126,9 +126,10 @@ async function fetchGeminiHealth() {
 
   try {
     const started = Date.now();
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
-    );
+    // Header, not ?key=, so the key stays out of URLs and request logs.
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      headers: { "x-goog-api-key": apiKey },
+    });
     const latencyMs = Date.now() - started;
 
     return {
