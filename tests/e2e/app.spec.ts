@@ -314,3 +314,78 @@ test("a failed clipboard write shows the manual copy message", async ({ page }) 
     page.getByText("Could not copy to the clipboard. Select the text and copy it manually."),
   ).toBeVisible();
 });
+
+test("history drawer has a named close button, Escape closes it and restores focus", async ({ page }) => {
+  await page.goto("/");
+  const historyButton = page.getByRole("button", { name: "Prompt history" });
+  await historyButton.click();
+
+  await expect(page.getByRole("button", { name: "Close history" })).toBeVisible();
+  await expect(historyButton).toHaveAttribute("aria-expanded", "true");
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Close history" })).toBeHidden();
+  await expect(historyButton).toBeFocused();
+  await expect(historyButton).toHaveAttribute("aria-expanded", "false");
+});
+
+test("mode toggles expose aria-pressed", async ({ page }) => {
+  await page.goto("/");
+  const guided = page.getByRole("button", { name: "Guided Mode", exact: true });
+  await expect(guided).toHaveAttribute("aria-pressed", "false");
+  await guided.click();
+  await expect(guided).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Fast Generation" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+});
+
+test("a failed generate is announced through an alert", async ({ page }) => {
+  await page.route("**/api/generate", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Boom" }),
+    });
+  });
+
+  await page.goto("/");
+  await page
+    .getByPlaceholder("Example: Build a chrome extension that will help me to track my time")
+    .fill("Create a production readiness checklist for a prompt generation app");
+  await page.getByRole("button", { name: /generate prompt/i }).click();
+
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toBeVisible();
+});
+
+test("status region announces generation and copy", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .getByPlaceholder("Example: Build a chrome extension that will help me to track my time")
+    .fill("Create a production readiness checklist for a prompt generation app");
+  await page.getByRole("button", { name: /generate prompt/i }).click();
+
+  const status = page.getByRole("status");
+  await expect(status).toHaveText("Prompt ready");
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(status).toHaveText("Copied");
+});
+
+test("guided questions take focus and custom inputs have names", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .getByPlaceholder("Example: Build a chrome extension that will help me to track my time")
+    .fill("Create a production readiness checklist for a prompt generation app");
+  await page.getByRole("button", { name: "Guided Mode" }).click();
+  await page.getByRole("button", { name: "Start Guided Mode" }).click();
+
+  await expect(page.getByText("Which expert role should the AI assume?")).toBeFocused();
+  await expect(
+    page.getByRole("textbox", { name: "Custom answer for: Which expert role should the AI assume?" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Senior engineer" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+});

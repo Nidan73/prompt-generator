@@ -1,18 +1,28 @@
 "use client";
 
-import { motion } from "framer-motion";
+import type { Ref } from "react";
+import { m } from "framer-motion";
 import { History } from "lucide-react";
 import { fadeUp } from "./fade-up";
 import { ThemeToggle } from "./theme-toggle";
 
 type WorkbenchHeaderProps = {
   historyCount: number;
+  historyOpen: boolean;
+  historyControlsId: string;
+  historyButtonRef: Ref<HTMLButtonElement>;
   onToggleHistory: () => void;
 };
 
-export function WorkbenchHeader({ historyCount, onToggleHistory }: WorkbenchHeaderProps) {
+export function WorkbenchHeader({
+  historyCount,
+  historyOpen,
+  historyControlsId,
+  historyButtonRef,
+  onToggleHistory,
+}: WorkbenchHeaderProps) {
   return (
-    <motion.header
+    <m.header
       variants={fadeUp}
       initial="initial"
       animate="animate"
@@ -24,8 +34,11 @@ export function WorkbenchHeader({ historyCount, onToggleHistory }: WorkbenchHead
       </div>
       <div className="flex items-center gap-2">
         <button
+          ref={historyButtonRef}
           type="button"
           onClick={onToggleHistory}
+          aria-expanded={historyOpen}
+          aria-controls={historyControlsId}
           className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.05] bg-white/70 shadow-sm backdrop-blur-md transition hover:bg-black/[0.03] dark:border-white/[0.08] dark:bg-black/50 dark:hover:bg-white/[0.06]"
           aria-label="Prompt history"
         >
@@ -38,6 +51,6 @@ export function WorkbenchHeader({ historyCount, onToggleHistory }: WorkbenchHead
         </button>
         <ThemeToggle />
       </div>
-    </motion.header>
+    </m.header>
   );
 }

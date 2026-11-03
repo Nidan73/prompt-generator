@@ -10,6 +10,7 @@ export const CLIPBOARD_ERROR_MESSAGE = "Could not copy to the clipboard. Select 
 export function useClipboardActions(
   result: DispatcherResponse | null,
   onError: (message: string) => void,
+  onCopied: () => void,
 ) {
   const [copied, setCopied] = useState("");
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,6 +32,7 @@ export function useClipboardActions(
     }
 
     setCopied(label);
+    onCopied();
     if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
     copyTimeoutRef.current = setTimeout(() => setCopied(""), resetAfterMs);
   }

@@ -69,6 +69,7 @@ export function RoutingPanel({
               type="button"
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
+              aria-pressed={isActive}
               disabled={!hasResult || isCurrentlyLoading}
               className={cn(
                 "rounded-2xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50",
@@ -99,7 +100,7 @@ export function RoutingPanel({
               <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                 {activeRecommendation.reasoning}
               </p>
-              <p className="mt-1 break-words text-xs leading-relaxed text-slate-400 dark:text-slate-500">
+              <p className="mt-1 break-words text-xs leading-relaxed text-slate-600 dark:text-slate-400">
                 {activeRecommendation.platform_url}
               </p>
             </div>

@@ -1,10 +1,12 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef } from "react";
+import { AnimatePresence, m } from "framer-motion";
 import { Trash2, X } from "lucide-react";
 import type { HistoryEntry } from "@/lib/prompt-history";
 
 type HistoryDrawerProps = {
+  id: string;
   open: boolean;
   history: HistoryEntry[];
   // Loading an entry mid-stream would race the stream's own result.
@@ -14,11 +16,19 @@ type HistoryDrawerProps = {
   onLoad: (entry: HistoryEntry) => void;
 };
 
-export function HistoryDrawer({ open, history, disabled, onClear, onClose, onLoad }: HistoryDrawerProps) {
+export function HistoryDrawer({ id, open, history, disabled, onClear, onClose, onLoad }: HistoryDrawerProps) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // Move focus into the drawer when it opens so keyboard users land on its content.
+  useEffect(() => {
+    if (open) headingRef.current?.focus();
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
+          id={id}
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: "auto" }}
           exit={{ opacity: 0, height: 0 }}
@@ -29,7 +39,7 @@ export function HistoryDrawer({ open, history, disabled, onClear, onClose, onLoa
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">History</p>
-                <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950 dark:text-white">Past Generations</h2>
+                <h2 ref={headingRef} tabIndex={-1} className="mt-1 text-lg font-semibold tracking-tight text-slate-950 outline-none dark:text-white">Past Generations</h2>
               </div>
               <div className="flex items-center gap-2">
                 {history.length > 0 && (
@@ -44,6 +54,7 @@ export function HistoryDrawer({ open, history, disabled, onClear, onClose, onLoa
                 <button
                   type="button"
                   onClick={onClose}
+                  aria-label="Close history"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-black/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.06]"
                 >
                   <X className="h-4 w-4" />
@@ -69,7 +80,7 @@ export function HistoryDrawer({ open, history, disabled, onClear, onClose, onLoa
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 line-clamp-1">
                       {entry.optimizedPrompt.slice(0, 80)}...
                     </p>
-                    <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                    <p className="mt-1.5 text-[11px] text-slate-600 dark:text-slate-400">
                       {new Date(entry.timestamp).toLocaleString()}
                     </p>
                   </button>
@@ -77,7 +88,7 @@ export function HistoryDrawer({ open, history, disabled, onClear, onClose, onLoa
               </div>
             )}
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

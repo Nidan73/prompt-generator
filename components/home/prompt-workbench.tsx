@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { LazyMotion, MotionConfig, domAnimation } from "framer-motion";
 import { getHistory, clearHistory, type HistoryEntry } from "@/lib/prompt-history";
 import { buildApiModeOutput } from "@/lib/api-mode";
 import { PROMPT_MAX_CHARS } from "@/lib/limits";
@@ -44,7 +45,13 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   } = useGuidedMode();
   const [result, setResult] = useState<DispatcherResponse | null>(null);
   const [error, setError] = useState("");
-  const { copied, setCopied, copyText, copyAndOpen, sharePrompt } = useClipboardActions(result, setError);
+  // Text for the polite live region, so screen readers hear progress that is otherwise visual only.
+  const [announcement, setAnnouncement] = useState("");
+  const { copied, setCopied, copyText, copyAndOpen, sharePrompt } = useClipboardActions(
+    result,
+    setError,
+    () => setAnnouncement("Copied"),
+  );
   const { sharedPrompt, dismissSharedPrompt } = useSharedPrompt();
   const [activeTab, setActiveTab] = useState<RecommendationTier>("open_source");
   const [isGuidedModeEnabled, setIsGuidedModeEnabled] = useState(false);
@@ -57,6 +64,9 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   // Feature: History
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const historyDrawerId = useId();
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const outputHeadingRef = useRef<HTMLHeadingElement>(null);
 
   // Feature: Developer Mode
   const [outputMode, setOutputMode] = useState<"chat" | "api">("chat");
@@ -89,7 +99,10 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
     displayPrompt,
     displayResult,
     displayRecommendations,
-  } = usePromptStreams({ result, trimmedPrompt, setResult, setError, reportApiError, setHistory, setRefineInput });
+  } = usePromptStreams({ result, trimmedPrompt, setResult, setError, reportApiError, setHistory,
+    setRefineInput,
+    onGenerated: () => setAnnouncement("Prompt ready"),
+  });
   const isCurrentlyLoading = isLoadingManual || isGeneratingStream || isRefiningStream;
   const isStreaming = isGeneratingStream || isRefiningStream;
   const isGenerateDisabled = !hasEnoughContext || isClarifying || isCurrentlyLoading || isCoolingDown;
@@ -102,6 +115,20 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
 
     return () => window.clearTimeout(timeout);
   }, []);
+
+  // Escape closes the drawer from anywhere and hands focus back to its trigger.
+  useEffect(() => {
+    if (!showHistory) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setShowHistory(false);
+      historyButtonRef.current?.focus();
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showHistory]);
 
   useKeyboardShortcuts({
     onGenerate: generateFromShortcut,
@@ -173,6 +200,7 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
 
     setIsLoadingManual(true);
     setError("");
+    setAnnouncement("Generating prompt");
     setCopied("");
     setOutputMode("chat");
     setRefineInput("");
@@ -267,6 +295,13 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
     setActiveTab("open_source");
     setShowHistory(false);
     setOutputMode("chat");
+    // Wait a frame so the output section exists before it takes focus.
+    requestAnimationFrame(() => outputHeadingRef.current?.focus());
+  }
+
+  function closeHistory() {
+    setShowHistory(false);
+    historyButtonRef.current?.focus();
   }
 
   function getApiModeOutput(): string {
@@ -283,112 +318,125 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   const activeRecommendation = displayRecommendations?.[activeTab];
 
   return (
-    <main className="min-h-screen overflow-x-hidden transition-colors">
-      <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 pb-40 sm:px-6 sm:pb-6 lg:px-8">
-        {banner}
+    // strict throws on any full "motion" component, keeping the bundle on domAnimation.
+    <LazyMotion features={domAnimation} strict>
+      <MotionConfig reducedMotion="user">
+        <main className="min-h-screen overflow-x-hidden transition-colors">
+          <p role="status" aria-live="polite" className="sr-only">
+            {announcement}
+          </p>
+          <div className="relative mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 pb-40 sm:px-6 sm:pb-6 lg:px-8">
+            {banner}
 
-        <WorkbenchHeader
-          historyCount={history.length}
-          onToggleHistory={() => {
-            setShowHistory(!showHistory);
-            setHistory(getHistory());
-          }}
-        />
-
-        <HistoryDrawer
-          open={showHistory}
-          history={history}
-          disabled={isStreaming}
-          onClear={() => {
-            clearHistory();
-            setHistory([]);
-          }}
-          onClose={() => setShowHistory(false)}
-          onLoad={loadFromHistory}
-        />
-
-        <SharedPromptPanel
-          sharedPrompt={sharedPrompt}
-          hasResult={Boolean(result)}
-          copied={copied}
-          onCopy={copyText}
-          onDismiss={dismissSharedPrompt}
-        />
-
-        <section className="flex flex-1 flex-col justify-center py-10">
-          {hero}
-
-          <PromptComposer
-            prompt={prompt}
-            onPromptChange={setPrompt}
-            isCoolingDown={isCoolingDown}
-            cooldownTimer={cooldownTimer}
-            isPromptTooLong={isPromptTooLong}
-            hasPrompt={hasPrompt}
-            hasEnoughContext={hasEnoughContext}
-            detectedUrl={detectedUrl}
-            isExtracting={isExtracting}
-            isGuided={isGuided}
-            isGuidedModeEnabled={isGuidedModeEnabled}
-            onGuidedModeChange={setIsGuidedModeEnabled}
-            isClarifying={isClarifying}
-            isCurrentlyLoading={isCurrentlyLoading}
-            isGenerateDisabled={isGenerateDisabled}
-            showGenerateButton={showGenerateButton}
-            hasCompletedGuidedFlow={hasCompletedGuidedFlow}
-            error={error}
-            onRequestClarifications={requestClarifications}
-            onGenerate={generatePrompt}
-          />
-
-          <GuidedQuestions
-            questions={questions}
-            answers={answers}
-            customAnswers={customAnswers}
-            hasCompletedGuidedFlow={hasCompletedGuidedFlow}
-            isCurrentlyLoading={isCurrentlyLoading}
-            isGenerateDisabled={isGenerateDisabled}
-            isCoolingDown={isCoolingDown}
-            cooldownTimer={cooldownTimer}
-            onReset={resetGuided}
-            onChooseAnswer={chooseAnswer}
-            onUpdateCustomAnswer={updateCustomAnswer}
-            onGenerate={generatePrompt}
-          />
-
-          <OutputPanel
-            visible={Boolean(isCurrentlyLoading || displayResult)}
-            hasResult={Boolean(result)}
-            displayResult={displayResult}
-            displayPrompt={displayPrompt}
-            activeTab={activeTab}
-            outputMode={outputMode}
-            onOutputModeChange={setOutputMode}
-            isCurrentlyLoading={isCurrentlyLoading}
-            isRefiningStream={isRefiningStream}
-            isStreaming={isStreaming}
-            onStop={stopStreaming}
-            copied={copied}
-            onShare={sharePrompt}
-            onCopyOutput={copyOutput}
-            refineInput={refineInput}
-            onRefineInputChange={setRefineInput}
-            onRefine={refinePrompt}
-          >
-            <RoutingPanel
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              hasResult={Boolean(result)}
-              isCurrentlyLoading={isCurrentlyLoading}
-              activeRecommendation={activeRecommendation}
-              copied={copied}
-              onCopyAndOpen={copyAndOpen}
+            <WorkbenchHeader
+              historyCount={history.length}
+              historyOpen={showHistory}
+              historyControlsId={historyDrawerId}
+              historyButtonRef={historyButtonRef}
+              onToggleHistory={() => {
+                setShowHistory(!showHistory);
+                setHistory(getHistory());
+              }}
             />
-          </OutputPanel>
-        </section>
 
-        {footer}
-      </div>
-    </main>
+            <HistoryDrawer
+              id={historyDrawerId}
+              open={showHistory}
+              history={history}
+              disabled={isStreaming}
+              onClear={() => {
+                clearHistory();
+                setHistory([]);
+              }}
+              onClose={closeHistory}
+              onLoad={loadFromHistory}
+            />
+
+            <SharedPromptPanel
+              sharedPrompt={sharedPrompt}
+              hasResult={Boolean(result)}
+              copied={copied}
+              onCopy={copyText}
+              onDismiss={dismissSharedPrompt}
+            />
+
+            <section className="flex flex-1 flex-col justify-center py-10">
+              {hero}
+
+              <PromptComposer
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                isCoolingDown={isCoolingDown}
+                cooldownTimer={cooldownTimer}
+                isPromptTooLong={isPromptTooLong}
+                hasPrompt={hasPrompt}
+                hasEnoughContext={hasEnoughContext}
+                detectedUrl={detectedUrl}
+                isExtracting={isExtracting}
+                isGuided={isGuided}
+                isGuidedModeEnabled={isGuidedModeEnabled}
+                onGuidedModeChange={setIsGuidedModeEnabled}
+                isClarifying={isClarifying}
+                isCurrentlyLoading={isCurrentlyLoading}
+                isGenerateDisabled={isGenerateDisabled}
+                showGenerateButton={showGenerateButton}
+                hasCompletedGuidedFlow={hasCompletedGuidedFlow}
+                error={error}
+                onRequestClarifications={requestClarifications}
+                onGenerate={generatePrompt}
+              />
+
+              <GuidedQuestions
+                questions={questions}
+                answers={answers}
+                customAnswers={customAnswers}
+                hasCompletedGuidedFlow={hasCompletedGuidedFlow}
+                isCurrentlyLoading={isCurrentlyLoading}
+                isGenerateDisabled={isGenerateDisabled}
+                isCoolingDown={isCoolingDown}
+                cooldownTimer={cooldownTimer}
+                onReset={resetGuided}
+                onChooseAnswer={chooseAnswer}
+                onUpdateCustomAnswer={updateCustomAnswer}
+                onGenerate={generatePrompt}
+              />
+
+              <OutputPanel
+                visible={Boolean(isCurrentlyLoading || displayResult)}
+                hasResult={Boolean(result)}
+                displayResult={displayResult}
+                displayPrompt={displayPrompt}
+                activeTab={activeTab}
+                outputMode={outputMode}
+                onOutputModeChange={setOutputMode}
+                isCurrentlyLoading={isCurrentlyLoading}
+                isRefiningStream={isRefiningStream}
+                isStreaming={isStreaming}
+                onStop={stopStreaming}
+                copied={copied}
+                onShare={sharePrompt}
+                onCopyOutput={copyOutput}
+                refineInput={refineInput}
+                onRefineInputChange={setRefineInput}
+                onRefine={refinePrompt}
+                headingRef={outputHeadingRef}
+              >
+                <RoutingPanel
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                  hasResult={Boolean(result)}
+                  isCurrentlyLoading={isCurrentlyLoading}
+                  activeRecommendation={activeRecommendation}
+                  copied={copied}
+                  onCopyAndOpen={copyAndOpen}
+                />
+              </OutputPanel>
+            </section>
+
+            {footer}
+          </div>
+        </main>
+      </MotionConfig>
+    </LazyMotion>
   );
 }

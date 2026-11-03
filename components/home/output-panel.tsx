@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import type { ReactNode, Ref } from "react";
+import { AnimatePresence, m } from "framer-motion";
 import { Clipboard, Code2, Link2, Loader2, MessageSquare, RefreshCw, Send, Square } from "lucide-react";
 import { buildApiModeOutput } from "@/lib/api-mode";
 import { cn } from "@/lib/cn";
@@ -27,6 +27,7 @@ type OutputPanelProps = {
   refineInput: string;
   onRefineInputChange: (value: string) => void;
   onRefine: () => void;
+  headingRef: Ref<HTMLHeadingElement>;
   // The routing panel sits beside the output card inside the same animated section.
   children: ReactNode;
 };
@@ -49,12 +50,13 @@ export function OutputPanel({
   refineInput,
   onRefineInputChange,
   onRefine,
+  headingRef,
   children,
 }: OutputPanelProps) {
   return (
     <AnimatePresence>
       {visible && (
-        <motion.section
+        <m.section
           variants={fadeUp}
           initial="initial"
           animate="animate"
@@ -70,7 +72,11 @@ export function OutputPanel({
                   <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">
                     Output
                   </p>
-                  <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                  <h2
+                    ref={headingRef}
+                    tabIndex={-1}
+                    className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 outline-none dark:text-white"
+                  >
                     Master prompt
                   </h2>
                 </div>
@@ -114,11 +120,12 @@ export function OutputPanel({
                   <button
                     type="button"
                     onClick={() => onOutputModeChange("chat")}
+                    aria-pressed={outputMode === "chat"}
                     className={cn(
                       "flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-all duration-200",
                       outputMode === "chat"
                         ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
-                        : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                     )}
                   >
                     <MessageSquare className="h-3.5 w-3.5" /> Chat Mode
@@ -126,11 +133,12 @@ export function OutputPanel({
                   <button
                     type="button"
                     onClick={() => onOutputModeChange("api")}
+                    aria-pressed={outputMode === "api"}
                     className={cn(
                       "flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-all duration-200",
                       outputMode === "api"
                         ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
-                        : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                     )}
                   >
                     <Code2 className="h-3.5 w-3.5" /> API Mode
@@ -140,7 +148,7 @@ export function OutputPanel({
             </div>
 
             {/* Prompt Output */}
-            <div className="mt-5 min-h-[340px] overflow-auto rounded-2xl border border-black/[0.05] bg-black/[0.02] p-5 dark:border-white/[0.08] dark:bg-black/60">
+            <div aria-busy={isCurrentlyLoading} className="mt-5 min-h-[340px] overflow-auto rounded-2xl border border-black/[0.05] bg-black/[0.02] p-5 dark:border-white/[0.08] dark:bg-black/60">
               {displayPrompt ? (
                 <pre className={cn(
                   "whitespace-pre-wrap break-words font-sans text-sm leading-relaxed",
@@ -165,16 +173,18 @@ export function OutputPanel({
               <div className="mt-4 flex items-center gap-2">
                 <input
                   type="text"
+                  aria-label="Refinement instruction"
                   value={refineInput}
                   maxLength={REFINE_INSTRUCTION_MAX_CHARS}
                   onChange={(e) => onRefineInputChange(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") onRefine(); }}
                   placeholder="Refine: e.g., make it shorter, add error handling..."
-                  className="flex-1 rounded-xl border border-black/[0.06] bg-white/90 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-blue-500"
+                  className="flex-1 rounded-xl border border-black/[0.06] bg-white/90 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-blue-500"
                 />
                 <button
                   type="button"
                   onClick={onRefine}
+                  aria-label="Apply refinement"
                   disabled={!refineInput.trim() || isRefiningStream}
                   className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
                 >
@@ -184,7 +194,7 @@ export function OutputPanel({
             )}
           </div>
           {children}
-        </motion.section>
+        </m.section>
       )}
     </AnimatePresence>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { Clipboard, X } from "lucide-react";
 import { fadeUp } from "./fade-up";
 
@@ -16,7 +16,7 @@ export function SharedPromptPanel({ sharedPrompt, hasResult, copied, onCopy, onD
   return (
     <AnimatePresence>
       {sharedPrompt && !hasResult && (
-        <motion.section
+        <m.section
           variants={fadeUp}
           initial="initial"
           animate="animate"
@@ -40,6 +40,7 @@ export function SharedPromptPanel({ sharedPrompt, hasResult, copied, onCopy, onD
               <button
                 type="button"
                 onClick={onDismiss}
+                aria-label="Dismiss shared prompt"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-black/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.06]"
               >
                 <X className="h-4 w-4" />
@@ -49,7 +50,7 @@ export function SharedPromptPanel({ sharedPrompt, hasResult, copied, onCopy, onD
           <pre className="mt-4 whitespace-pre-wrap break-words rounded-xl border border-black/[0.05] bg-white/80 p-4 font-sans text-sm leading-relaxed text-slate-800 dark:border-white/[0.08] dark:bg-black/40 dark:text-slate-200">
             {sharedPrompt}
           </pre>
-        </motion.section>
+        </m.section>
       )}
     </AnimatePresence>
   );

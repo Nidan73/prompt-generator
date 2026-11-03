@@ -21,7 +21,7 @@ export default function Home() {
       hero={
         <div className="animate-fade-up mx-auto max-w-3xl text-center" style={{ animationDelay: "0.05s" }}>
           <div className="mb-6 flex items-center justify-center">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-600 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400">
               <Info className="h-3.5 w-3.5" />
               Prompt Generator, Not a Chatbot
             </span>

@@ -1,6 +1,7 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef } from "react";
+import { AnimatePresence, m } from "framer-motion";
 import { Check, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { fadeUp } from "./fade-up";
@@ -37,11 +38,18 @@ export function GuidedQuestions({
 }: GuidedQuestionsProps) {
   const selectedCount = questions.filter((question) => answers[question.id]?.trim()).length;
   const guidedStepCount = questions.length;
+  const firstQuestionRef = useRef<HTMLParagraphElement>(null);
+  const hasQuestions = questions.length > 0;
+
+  // New questions replace the form the user was on, so send focus to the first one.
+  useEffect(() => {
+    if (hasQuestions) firstQuestionRef.current?.focus();
+  }, [hasQuestions]);
 
   return (
     <AnimatePresence>
       {questions.length ? (
-        <motion.section
+        <m.section
           variants={fadeUp}
           initial="initial"
           animate="animate"
@@ -74,7 +82,7 @@ export function GuidedQuestions({
 
           <div className="mt-6 grid gap-4">
             {questions.map((question, questionIndex) => (
-              <motion.div
+              <m.div
                 key={question.id}
                 variants={fadeUp}
                 initial="initial"
@@ -82,7 +90,11 @@ export function GuidedQuestions({
                 transition={{ delay: questionIndex * 0.06, duration: 0.3 }}
                 className="rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-4 dark:border-white/[0.08] dark:bg-[#1c1c1e]"
               >
-                <p className="font-medium leading-relaxed text-slate-950 dark:text-white">
+                <p
+                  ref={questionIndex === 0 ? firstQuestionRef : undefined}
+                  tabIndex={-1}
+                  className="font-medium leading-relaxed text-slate-950 outline-none dark:text-white"
+                >
                   {question.question}
                 </p>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -94,6 +106,7 @@ export function GuidedQuestions({
                         type="button"
                         key={option}
                         onClick={() => onChooseAnswer(question.id, option)}
+                        aria-pressed={isSelected}
                         className={cn(
                           "min-h-12 rounded-2xl border px-3 py-2 text-left text-sm font-medium leading-relaxed transition",
                           isSelected
@@ -112,18 +125,19 @@ export function GuidedQuestions({
                     value={customAnswers[question.id] ?? ""}
                     onChange={(event) => onUpdateCustomAnswer(question.id, event.target.value)}
                     placeholder="Custom answer..."
+                    aria-label={`Custom answer for: ${question.question}`}
                     className={cn(
                       "min-h-12 rounded-2xl border px-3 py-2 text-sm font-medium leading-relaxed outline-none transition",
                       customAnswers[question.id]?.trim()
                         ? "border-blue-400 bg-blue-50 text-blue-900 shadow-sm shadow-blue-500/10 dark:border-blue-500 dark:bg-blue-950/40 dark:text-blue-100"
-                        : "border-black/[0.05] bg-white text-slate-700 placeholder:text-slate-400 hover:border-blue-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-blue-700",
+                        : "border-black/[0.05] bg-white text-slate-700 placeholder:text-slate-500 hover:border-blue-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:placeholder:text-slate-600 dark:hover:border-blue-700",
                     )}
                   />
                 </div>
-              </motion.div>
+              </m.div>
             ))}
             {hasCompletedGuidedFlow && (
-              <motion.div
+              <m.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="mt-6 flex justify-end border-t border-black/5 pt-6 dark:border-white/10"
@@ -137,10 +151,10 @@ export function GuidedQuestions({
                   {isCurrentlyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                   {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
                 </button>
-              </motion.div>
+              </m.div>
             )}
           </div>
-        </motion.section>
+        </m.section>
       ) : null}
     </AnimatePresence>
   );

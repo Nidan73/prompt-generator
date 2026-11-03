@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { cn } from "@/lib/cn";
@@ -16,38 +16,38 @@ export function ThemeToggle() {
       onClick={() => setTheme(isDark ? "light" : "dark")}
       className="relative inline-flex h-10 w-[72px] items-center rounded-full border border-black/[0.05] bg-white/70 p-1 shadow-sm backdrop-blur-md transition dark:border-white/[0.08] dark:bg-black/50"
     >
-      <motion.span
-        layout
+      <m.span
+        // x instead of layout: layout animations are not in the lazy domAnimation bundle.
+        initial={false}
+        animate={{ x: isDark ? 30 : 0 }}
         transition={{ type: "spring", stiffness: 420, damping: 32 }}
         className={cn(
-          "absolute top-1 flex h-8 w-8 items-center justify-center rounded-full shadow-sm",
-          isDark
-            ? "left-[34px] bg-slate-800 text-blue-200"
-            : "left-1 bg-slate-950 text-amber-300",
+          "absolute left-1 top-1 flex h-8 w-8 items-center justify-center rounded-full shadow-sm",
+          isDark ? "bg-slate-800 text-blue-200" : "bg-slate-950 text-amber-300",
         )}
       >
         <AnimatePresence mode="wait" initial={false}>
           {isDark ? (
-            <motion.span
+            <m.span
               key="moon"
               initial={{ opacity: 0, rotate: -35, scale: 0.8 }}
               animate={{ opacity: 1, rotate: 0, scale: 1 }}
               exit={{ opacity: 0, rotate: 35, scale: 0.8 }}
             >
               <Moon className="h-4 w-4" />
-            </motion.span>
+            </m.span>
           ) : (
-            <motion.span
+            <m.span
               key="sun"
               initial={{ opacity: 0, rotate: 35, scale: 0.8 }}
               animate={{ opacity: 1, rotate: 0, scale: 1 }}
               exit={{ opacity: 0, rotate: -35, scale: 0.8 }}
             >
               <Sun className="h-4 w-4" />
-            </motion.span>
+            </m.span>
           )}
         </AnimatePresence>
-      </motion.span>
+      </m.span>
     </button>
   );
 }

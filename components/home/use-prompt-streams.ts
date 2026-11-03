@@ -27,6 +27,7 @@ type PromptStreamsOptions = {
   reportApiError: (error: ParsedApiError, fallback: string) => void;
   setHistory: Dispatch<SetStateAction<HistoryEntry[]>>;
   setRefineInput: Dispatch<SetStateAction<string>>;
+  onGenerated: () => void;
 };
 
 // The two AI SDK streaming hooks, plus the prompt and recommendations to show while they stream.
@@ -38,6 +39,7 @@ export function usePromptStreams({
   reportApiError,
   setHistory,
   setRefineInput,
+  onGenerated,
 }: PromptStreamsOptions) {
   const latestResultRef = useRef(result);
   useEffect(() => {
@@ -77,6 +79,7 @@ export function usePromptStreams({
         recommendations: resolvedRecs,
       });
       setHistory(getHistory());
+      onGenerated();
     },
     onError: (error) => {
       reportApiError(parseApiError(error), "Generation failed. Give it another run in a moment.");

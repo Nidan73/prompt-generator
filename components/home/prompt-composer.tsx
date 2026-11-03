@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { AlertCircle, Globe, Loader2, Search, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { PROMPT_MAX_CHARS } from "@/lib/limits";
@@ -52,7 +52,7 @@ export function PromptComposer({
   onGenerate,
 }: PromptComposerProps) {
   return (
-    <motion.section
+    <m.section
       variants={fadeUp}
       initial="initial"
       animate="animate"
@@ -92,41 +92,45 @@ export function PromptComposer({
           // On mobile, wait for keyboard to fully open, then scroll the buttons into view so they 'bump up'
           if (window.innerWidth < 640) {
             setTimeout(() => {
-              document.getElementById('action-buttons')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              document.getElementById("action-buttons")?.scrollIntoView({
+                behavior: reduceMotion ? "auto" : "smooth",
+                block: "center",
+              });
             }, 400);
           }
         }}
         placeholder="Example: Build a chrome extension that will help me to track my time"
-        className="mt-5 min-h-[120px] sm:min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
+        className="mt-5 min-h-[120px] sm:min-h-[170px] w-full resize-none rounded-2xl border border-black/[0.06] bg-white/90 shadow-inner p-5 text-base leading-relaxed text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10 dark:border-white/[0.1] dark:bg-[#1c1c1e] dark:text-white dark:placeholder:text-slate-600 dark:focus:border-blue-500 dark:focus:bg-gray-950"
       />
       <AnimatePresence>
         {isPromptTooLong ? (
-          <motion.p
+          <m.p
             variants={fadeUp}
             initial="initial"
             animate="animate"
             exit="exit"
-            className="mt-3 text-sm font-medium text-amber-600 dark:text-amber-400"
+            className="mt-3 text-sm font-medium text-amber-700 dark:text-amber-400"
           >
             Keep the rough prompt under {PROMPT_MAX_CHARS} characters.
-          </motion.p>
+          </m.p>
         ) : hasPrompt && !hasEnoughContext ? (
-          <motion.p
+          <m.p
             variants={fadeUp}
             initial="initial"
             animate="animate"
             exit="exit"
-            className="mt-3 text-sm font-medium text-amber-600 dark:text-amber-400"
+            className="mt-3 text-sm font-medium text-amber-700 dark:text-amber-400"
           >
             Add a bit more detail — describe what you want to build or accomplish.
-          </motion.p>
+          </m.p>
         ) : null}
       </AnimatePresence>
 
       {/* URL Detection Badge */}
       <AnimatePresence>
         {detectedUrl && (
-          <motion.div
+          <m.div
             variants={fadeUp}
             initial="initial"
             animate="animate"
@@ -135,7 +139,7 @@ export function PromptComposer({
           >
             <Globe className="h-3.5 w-3.5" />
             {isExtracting ? "Extracting page content..." : "URL detected — context will be injected"}
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
@@ -144,11 +148,12 @@ export function PromptComposer({
           <button
             type="button"
             onClick={() => onGuidedModeChange(false)}
+            aria-pressed={!isGuidedModeEnabled}
             className={cn(
               "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-all duration-200",
               !isGuidedModeEnabled
                 ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
-                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                : "text-slate-600 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
             )}
           >
             Fast Generation
@@ -156,11 +161,12 @@ export function PromptComposer({
           <button
             type="button"
             onClick={() => onGuidedModeChange(true)}
+            aria-pressed={isGuidedModeEnabled}
             className={cn(
               "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-all duration-200",
               isGuidedModeEnabled
                 ? "bg-white text-slate-900 shadow-sm dark:bg-[#1c1c1e] dark:text-white"
-                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                : "text-slate-600 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
             )}
           >
             Guided Mode
@@ -182,7 +188,7 @@ export function PromptComposer({
         ) : (
           <AnimatePresence mode="wait">
             {showGenerateButton ? (
-              <motion.button
+              <m.button
                 key="generate"
                 type="button"
                 onClick={onGenerate}
@@ -195,7 +201,7 @@ export function PromptComposer({
               >
                 {isCurrentlyLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                 {isCoolingDown ? `Wait ${cooldownTimer}s` : "Generate Prompt"}
-              </motion.button>
+              </m.button>
             ) : null}
           </AnimatePresence>
         )}
@@ -203,7 +209,7 @@ export function PromptComposer({
 
       <AnimatePresence>
         {isGuided && !hasCompletedGuidedFlow ? (
-          <motion.p
+          <m.p
             variants={fadeUp}
             initial="initial"
             animate="animate"
@@ -211,13 +217,14 @@ export function PromptComposer({
             className="mt-4 text-sm leading-relaxed text-slate-500 dark:text-slate-400"
           >
             Answer all guided options to reveal the Generate Prompt action.
-          </motion.p>
+          </m.p>
         ) : null}
       </AnimatePresence>
 
       <AnimatePresence>
         {error ? (
-          <motion.div
+          <m.div
+            role="alert"
             variants={fadeUp}
             initial="initial"
             animate="animate"
@@ -225,16 +232,16 @@ export function PromptComposer({
             className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium leading-relaxed text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300"
           >
             {error}
-          </motion.div>
+          </m.div>
         ) : null}
       </AnimatePresence>
 
       {/* Keyboard shortcuts hint, desktop only */}
-      <div className="mt-5 hidden items-center justify-center gap-5 text-[11px] font-medium text-slate-400 dark:text-slate-500 sm:flex">
+      <div className="mt-5 hidden items-center justify-center gap-5 text-[11px] font-medium text-slate-600 dark:text-slate-400 sm:flex">
         <span><kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⌘/Ctrl</kbd> + <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">Enter</kbd> Generate</span>
         <span><kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⌘/Ctrl</kbd> + <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⇧ C</kbd> Copy</span>
         <span><kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">⌘/Ctrl</kbd> + <kbd className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] dark:border-slate-700 dark:bg-slate-800">H</kbd> History</span>
       </div>
-    </motion.section>
+    </m.section>
   );
 }
