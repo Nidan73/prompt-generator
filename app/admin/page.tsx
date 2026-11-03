@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -95,37 +95,65 @@ export default function AdminPage() {
   const [actionStatus, setActionStatus] = useState<string>("");
   const [pingResults, setPingResults] = useState<Record<string, { ok: boolean; latencyMs: number }> | null>(null);
 
+  const [loadError, setLoadError] = useState(false);
+  const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // No synchronous setState here: the initial-load effect calls this directly.
   const fetchUsageData = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await fetch("/api/admin/usage");
       if (res.status === 401) {
         setAuthenticated(false);
+        setLoadError(false);
         return;
       }
-      if (!res.ok) throw new Error("Failed to fetch data");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
       setAuthenticated(true);
+      setLoadError(false);
     } catch {
-      // Fallback
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchUsageData();
+  const refresh = useCallback(() => {
+    setLoading(true);
+    return fetchUsageData();
   }, [fetchUsageData]);
+
+  // Deferred a tick so the effect body itself never sets state.
+  useEffect(() => {
+    const t = setTimeout(fetchUsageData, 0);
+    return () => clearTimeout(t);
+  }, [fetchUsageData]);
+
+  useEffect(() => {
+    return () => {
+      if (statusTimer.current) clearTimeout(statusTimer.current);
+    };
+  }, []);
+
+  // Keep one pending clear so an older timeout cannot wipe a newer message.
+  const showStatus = (message: string, clearAfterMs?: number) => {
+    if (statusTimer.current) clearTimeout(statusTimer.current);
+    statusTimer.current = null;
+    setActionStatus(message);
+    if (clearAfterMs) {
+      statusTimer.current = setTimeout(() => setActionStatus(""), clearAfterMs);
+    }
+  };
 
   // Auto refresh timer
   useEffect(() => {
     if (!authenticated || autoRefreshSecs <= 0) return;
     const interval = setInterval(() => {
-      fetchUsageData();
+      refresh();
     }, autoRefreshSecs * 1000);
     return () => clearInterval(interval);
-  }, [authenticated, autoRefreshSecs, fetchUsageData]);
+  }, [authenticated, autoRefreshSecs, refresh]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,7 +175,7 @@ export default function AdminPage() {
 
       setAuthenticated(true);
       setPassword("");
-      await fetchUsageData();
+      await refresh();
     } catch {
       setLoginError("Could not connect to server.");
     } finally {
@@ -156,47 +184,75 @@ export default function AdminPage() {
   };
 
   const handleLogout = async () => {
-    await fetch("/api/admin/logout", { method: "POST" });
-    setAuthenticated(false);
-    setData(null);
+    try {
+      const res = await fetch("/api/admin/logout", { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setAuthenticated(false);
+      setData(null);
+    } catch {
+      showStatus("Logout failed. Try again.", 4000);
+    }
+  };
+
+  const runAction = async (action: string) => {
+    const res = await fetch("/api/admin/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const json = await res.json().catch(() => ({}));
+    return { res, json };
   };
 
   const handleResetCooldowns = async () => {
-    setActionStatus("Resetting cooldowns...");
+    showStatus("Resetting cooldowns...");
     try {
-      const res = await fetch("/api/admin/actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "reset_cooldowns" }),
-      });
-      const json = await res.json();
-      setActionStatus(json.message || "Reset complete.");
-      await fetchUsageData();
+      const { res, json } = await runAction("reset_cooldowns");
+      if (!res.ok) {
+        showStatus(json.message ?? json.error ?? `Action failed (HTTP ${res.status}).`, 4000);
+        return;
+      }
+      showStatus(json.message || "Reset complete.", 4000);
+      await refresh();
     } catch {
-      setActionStatus("Failed to reset cooldowns.");
+      showStatus("Failed to reset cooldowns.", 4000);
     }
-    setTimeout(() => setActionStatus(""), 4000);
   };
 
   const handlePingProviders = async () => {
-    setActionStatus("Pinging providers...");
+    showStatus("Pinging providers...");
     try {
-      const res = await fetch("/api/admin/actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "ping_providers" }),
-      });
-      const json = await res.json();
-      setPingResults(json.results);
-      setActionStatus("Ping completed.");
+      const { res, json } = await runAction("ping_providers");
+      if (!res.ok) {
+        showStatus(json.message ?? json.error ?? `Action failed (HTTP ${res.status}).`, 4000);
+        return;
+      }
+      setPingResults(json.results ?? null);
+      showStatus("Ping completed.", 4000);
     } catch {
-      setActionStatus("Failed to ping providers.");
+      showStatus("Failed to ping providers.", 4000);
     }
-    setTimeout(() => setActionStatus(""), 4000);
   };
 
   // ─── Loading Screen ──────────────────────────────────────────────────────────
-  if (authenticated === null) {
+  if (loadError && !data && authenticated !== false) {
+    return (
+      <div className="min-h-screen bg-[#0d0e14] text-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <AlertTriangle className="w-6 h-6 text-rose-400" />
+          <p className="text-sm text-zinc-300 font-medium">Could not load the dashboard.</p>
+          <button
+            onClick={refresh}
+            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold rounded-lg text-sm transition-all"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (authenticated === null || (authenticated && !data)) {
     return (
       <div className="min-h-screen bg-[#0d0e14] text-white flex items-center justify-center">
         <div className="flex items-center gap-3">
@@ -220,11 +276,12 @@ export default function AdminPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">
+              <label htmlFor="admin-password" className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">
                 Admin Password
               </label>
               <div className="relative">
                 <input
+                  id="admin-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -237,7 +294,7 @@ export default function AdminPage() {
             </div>
 
             {loginError && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs flex items-center gap-2">
+              <div role="alert" className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
                 <span>{loginError}</span>
               </div>
@@ -257,12 +314,15 @@ export default function AdminPage() {
   }
 
   const { providers, pools } = data || {};
+  const NA = "n/a";
   const metrics = providers?.redis?.metrics;
 
   const groqPercent =
     providers?.groq?.limitTokens && providers?.groq?.remainingTokens !== null && providers?.groq?.remainingTokens !== undefined
       ? Math.round((providers.groq.remainingTokens / providers.groq.limitTokens) * 100)
-      : 100;
+      : null;
+
+  const lastSync = data?.timestamp ? new Date(data.timestamp).toLocaleTimeString() : NA;
 
   return (
     <div className="min-h-screen bg-[#090a0f] text-zinc-100 p-6 md:p-10 font-sans selection:bg-emerald-500/30">
@@ -289,18 +349,21 @@ export default function AdminPage() {
               <span className="px-2 text-zinc-500 font-medium">Refresh:</span>
               <button
                 onClick={() => setAutoRefreshSecs(10)}
+                aria-pressed={autoRefreshSecs === 10}
                 className={`px-2 py-1 rounded transition-colors ${autoRefreshSecs === 10 ? "bg-emerald-500/20 text-emerald-400 font-semibold" : "hover:text-white"}`}
               >
                 10s
               </button>
               <button
                 onClick={() => setAutoRefreshSecs(30)}
+                aria-pressed={autoRefreshSecs === 30}
                 className={`px-2 py-1 rounded transition-colors ${autoRefreshSecs === 30 ? "bg-emerald-500/20 text-emerald-400 font-semibold" : "hover:text-white"}`}
               >
                 30s
               </button>
               <button
                 onClick={() => setAutoRefreshSecs(0)}
+                aria-pressed={autoRefreshSecs === 0}
                 className={`px-2 py-1 rounded transition-colors ${autoRefreshSecs === 0 ? "bg-emerald-500/20 text-emerald-400 font-semibold" : "hover:text-white"}`}
               >
                 Off
@@ -308,8 +371,9 @@ export default function AdminPage() {
             </div>
 
             <button
-              onClick={fetchUsageData}
+              onClick={refresh}
               disabled={loading}
+              aria-label="Refresh now"
               className="p-2 bg-[#13151f] hover:bg-[#1a1d2b] border border-white/10 rounded-lg text-zinc-300 hover:text-white transition-all"
               title="Refresh metrics"
             >
@@ -327,8 +391,15 @@ export default function AdminPage() {
         </header>
 
         {/* ── Status Toast ── */}
+        {loadError && data && (
+          <div role="alert" className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-300 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Refresh failed. Showing data from {lastSync}.</span>
+          </div>
+        )}
+
         {actionStatus && (
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs flex items-center gap-2 animate-in fade-in duration-200">
+          <div role="status" aria-live="polite" className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-xs flex items-center gap-2 animate-in fade-in duration-200">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{actionStatus}</span>
           </div>
@@ -343,12 +414,12 @@ export default function AdminPage() {
               <Activity className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-black text-white">
-              {metrics?.totalRequests.toLocaleString() ?? "0"}
+              {metrics?.totalRequests.toLocaleString() ?? NA}
             </div>
             <div className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
-              <span className="text-emerald-400 font-semibold">{metrics?.totalSuccess ?? 0} successful</span>
+              <span className="text-emerald-400 font-semibold">{metrics?.totalSuccess ?? NA} successful</span>
               <span>·</span>
-              <span className="text-rose-400 font-semibold">{metrics?.totalError ?? 0} errors</span>
+              <span className="text-rose-400 font-semibold">{metrics?.totalError ?? NA} errors</span>
             </div>
           </div>
 
@@ -361,10 +432,10 @@ export default function AdminPage() {
             <div className="text-2xl font-black text-white">
               {providers?.openrouter?.creditsRemainingUsd !== null && providers?.openrouter?.creditsRemainingUsd !== undefined
                 ? `$${providers.openrouter.creditsRemainingUsd.toFixed(2)}`
-                : "Active"}
+                : NA}
             </div>
             <div className="text-[11px] text-zinc-400 mt-1">
-              Total Spent: ${providers?.openrouter?.usageUsd?.toFixed(4) ?? "0.0000"}
+              Total Spent: {providers?.openrouter?.usageUsd !== undefined ? `$${providers.openrouter.usageUsd.toFixed(4)}` : NA}
             </div>
           </div>
 
@@ -375,10 +446,10 @@ export default function AdminPage() {
               <Zap className="w-4 h-4 text-amber-400" />
             </div>
             <div className="text-2xl font-black text-white">
-              {groqPercent}% <span className="text-sm font-normal text-zinc-400">capacity</span>
+              {groqPercent === null ? NA : `${groqPercent}%`} <span className="text-sm font-normal text-zinc-400">capacity</span>
             </div>
             <div className="text-[11px] text-zinc-400 mt-1">
-              Reset in: {providers?.groq?.resetTokens ?? "0s"}
+              Reset in: {providers?.groq?.resetTokens ?? NA}
             </div>
           </div>
 
@@ -389,10 +460,10 @@ export default function AdminPage() {
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="text-2xl font-black text-white">
-              {pools?.generate?.ready ?? 0} / {pools?.generate?.configured ?? 0}
+              {pools?.generate?.ready ?? NA} / {pools?.generate?.configured ?? NA}
             </div>
             <div className="text-[11px] text-zinc-400 mt-1">
-              {pools?.generate?.coolingDown ?? 0} cooling down
+              {pools?.generate?.coolingDown ?? NA} cooling down
             </div>
           </div>
         </div>
@@ -422,13 +493,13 @@ export default function AdminPage() {
                 <div className="flex justify-between text-xs text-zinc-400 mb-1">
                   <span>Daily Remaining Tokens</span>
                   <span className="text-white font-medium">
-                    {providers?.groq?.remainingTokens?.toLocaleString() ?? "100,000"} / {providers?.groq?.limitTokens?.toLocaleString() ?? "100,000"}
+                    {providers?.groq?.remainingTokens?.toLocaleString() ?? NA} / {providers?.groq?.limitTokens?.toLocaleString() ?? NA}
                   </span>
                 </div>
                 <div className="w-full h-2 bg-[#1c1f2e] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-amber-400 transition-all duration-500"
-                    style={{ width: `${groqPercent}%` }}
+                    style={{ width: `${groqPercent ?? 0}%` }}
                   />
                 </div>
               </div>
@@ -436,11 +507,11 @@ export default function AdminPage() {
               <div className="grid grid-cols-2 gap-2 text-xs pt-1">
                 <div className="bg-[#181a27] p-2.5 rounded-lg border border-white/5">
                   <span className="text-zinc-500 block">Remaining RPM</span>
-                  <span className="text-white font-semibold">{providers?.groq?.remainingRequests ?? 30} req/min</span>
+                  <span className="text-white font-semibold">{providers?.groq?.remainingRequests ?? NA} req/min</span>
                 </div>
                 <div className="bg-[#181a27] p-2.5 rounded-lg border border-white/5">
                   <span className="text-zinc-500 block">Token Reset</span>
-                  <span className="text-white font-semibold">{providers?.groq?.resetTokens ?? "Instant"}</span>
+                  <span className="text-white font-semibold">{providers?.groq?.resetTokens ?? NA}</span>
                 </div>
               </div>
             </div>
@@ -471,19 +542,19 @@ export default function AdminPage() {
                   <span className="text-emerald-400 font-bold text-sm">
                     {providers?.openrouter?.creditsRemainingUsd !== null && providers?.openrouter?.creditsRemainingUsd !== undefined
                       ? `$${providers.openrouter.creditsRemainingUsd.toFixed(2)}`
-                      : "Pay As You Go"}
+                      : NA}
                   </span>
                 </div>
                 <div className="bg-[#181a27] p-2.5 rounded-lg border border-white/5">
                   <span className="text-zinc-500 block">Total Lifetime Spend</span>
-                  <span className="text-white font-semibold">${providers?.openrouter?.usageUsd?.toFixed(4) ?? "0.0000"}</span>
+                  <span className="text-white font-semibold">{providers?.openrouter?.usageUsd !== undefined ? `$${providers.openrouter.usageUsd.toFixed(4)}` : NA}</span>
                 </div>
               </div>
 
               <div className="bg-[#181a27] p-2.5 rounded-lg border border-white/5 text-xs flex justify-between items-center">
                 <span className="text-zinc-500">Rate Limit Interval</span>
                 <span className="text-zinc-300 font-medium">
-                  {providers?.openrouter?.rateLimit?.requests ?? 50} req / {providers?.openrouter?.rateLimit?.interval ?? "10s"}
+                  {providers?.openrouter?.rateLimit?.requests ?? NA} req / {providers?.openrouter?.rateLimit?.interval ?? NA}
                 </span>
               </div>
             </div>
@@ -521,7 +592,7 @@ export default function AdminPage() {
 
               <div className="bg-[#181a27] p-2.5 rounded-lg border border-white/5 text-xs flex justify-between items-center">
                 <span className="text-zinc-500">Probe Latency</span>
-                <span className="text-emerald-400 font-semibold">{providers?.gemini?.latencyMs ?? "~350"} ms</span>
+                <span className="text-emerald-400 font-semibold">{providers?.gemini?.latencyMs ?? NA} ms</span>
               </div>
             </div>
           </div>
@@ -628,7 +699,7 @@ export default function AdminPage() {
         {/* ── Footer ── */}
         <footer className="text-center text-xs text-zinc-600 pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>Bhai Thik Kor · Admin Infrastructure Control</span>
-          <span>Last sync: {data?.timestamp ? new Date(data.timestamp).toLocaleTimeString() : "—"}</span>
+          <span>Last sync: {lastSync}</span>
         </footer>
       </div>
     </div>
