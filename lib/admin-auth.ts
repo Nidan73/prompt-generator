@@ -40,6 +40,11 @@ function getSecretKey(): string {
   return secret || DEV_SESSION_SECRET;
 }
 
+/** Throws AdminConfigError when sessions cannot be signed on this deployment. */
+export function assertAdminConfigured(): void {
+  getSecretKey();
+}
+
 function sha256(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }

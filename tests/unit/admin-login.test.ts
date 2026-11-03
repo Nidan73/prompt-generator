@@ -10,6 +10,7 @@ vi.mock("@/lib/rate-limit", () => ({
 import { POST } from "../../app/api/admin/login/route";
 import { POST as logout } from "../../app/api/admin/logout/route";
 import { createRateLimit } from "@/lib/rate-limit";
+import * as adminAuth from "@/lib/admin-auth";
 
 function allow() {
   return { success: true, limit: 5, remaining: 4, reset: Date.now() + 60_000, degraded: false, scope: "window" };
@@ -31,6 +32,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
 
@@ -105,6 +107,48 @@ describe("POST /api/admin/login", () => {
       prefix: "@prompt-generator/admin-login",
       scope: "window",
     });
+  });
+
+  it("answers 503 for a wrong password too when production has no session secret", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ADMIN_SESSION_SECRET", "");
+
+    const response = await POST(loginRequest({ password: "definitely-wrong" }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Admin access is not configured on this deployment.",
+    });
+  });
+
+  it("fails closed in production when the limiter is degraded, without checking the password", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    check.mockResolvedValue({ ...allow(), degraded: true });
+    const verify = vi.spyOn(adminAuth, "verifyPassword");
+
+    for (const password of ["correct-horse-battery", "wrong"]) {
+      const response = await POST(loginRequest({ password }));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: "Admin login is temporarily unavailable. Try again later.",
+      });
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("allows a degraded limiter outside production so local dev works without Upstash", async () => {
+    check.mockResolvedValue({ ...allow(), degraded: true });
+    const response = await POST(loginRequest({ password: "correct-horse-battery" }));
+    expect(response.status).toBe(200);
+  });
+
+  it("does not consult the password when the session secret is missing in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ADMIN_SESSION_SECRET", "");
+    const verify = vi.spyOn(adminAuth, "verifyPassword");
+
+    await POST(loginRequest({ password: "correct-horse-battery" }));
+    expect(verify).not.toHaveBeenCalled();
   });
 
   it("answers 503 when production has no session secret", async () => {

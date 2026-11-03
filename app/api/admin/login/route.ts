@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   ADMIN_COOKIE_NAME,
   AdminConfigError,
+  assertAdminConfigured,
   createAdminToken,
   verifyPassword,
 } from "@/lib/admin-auth";
@@ -39,11 +40,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Fail closed: an unmetered login endpoint in production is open to brute force.
+  if (limit.degraded && process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Admin login is temporarily unavailable. Try again later." },
+      { status: 503 },
+    );
+  }
+
   try {
     const body = loginSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) {
       return NextResponse.json({ error: "Invalid admin password." }, { status: 400 });
     }
+
+    // Before the password check, so a misconfigured deployment answers 503 for
+    // every password and never reveals whether a guess was right.
+    assertAdminConfigured();
 
     if (!verifyPassword(body.data.password)) {
       return NextResponse.json({ error: "Invalid admin password." }, { status: 401 });
