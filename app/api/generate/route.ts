@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
           abortSignal: request.signal,
         });
 
-        // Wait for real output before committing to a 200 — otherwise a provider
+        // Wait for real output before committing to a 200, otherwise a provider
         // that dies mid-stream leaves the client with an empty body and no
         // fallback, because the headers have already gone out.
         const response = await createGuardedTextStreamResponse({

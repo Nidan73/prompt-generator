@@ -1,7 +1,7 @@
 /**
  * OpenRouter Free Model Discovery
  *
- * OpenRouter's `:free` model IDs come and go — `openai/gpt-oss-120b:free` was
+ * OpenRouter's `:free` model IDs come and go, `openai/gpt-oss-120b:free` was
  * pinned in every pool and has since been removed from the catalogue entirely,
  * so each rotation onto it burned a fallback hop and cooled the slot down.
  *
@@ -33,7 +33,7 @@ const CATALOGUE_URL = "https://openrouter.ai/api/v1/models";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 /**
  * Deliberately short. This fetch can sit in front of a user's first token on a
- * cold isolate, and OpenRouter models are the tail of the chain — waiting
+ * cold isolate, and OpenRouter models are the tail of the chain, waiting
  * seconds for an optional fallback is a bad trade.
  */
 const FETCH_TIMEOUT_MS = 3000;
@@ -96,7 +96,7 @@ export function supportsStructuredOutput(model: OpenRouterCatalogueModel): boole
 }
 
 /**
- * `structured: true` is required by any route using generateObject/streamObject —
+ * `structured: true` is required by any route using generateObject/streamObject:
  * a model without it fails after the response has already started streaming.
  */
 export function selectFreeModels(
@@ -167,7 +167,7 @@ async function getCatalogue(): Promise<CatalogueCache> {
       );
 
       // Serving a slightly stale *live* list beats dropping back to IDs pinned
-      // in source — going stale-to-hardcoded is the exact failure this module
+      // in source, going stale-to-hardcoded is the exact failure this module
       // exists to prevent. Only shorten the TTL so the next request retries.
       if (stale && stale.source === "live" && stale.models.length > 0) {
         return { ...stale, expiresAt: Date.now() + 5 * 60 * 1000 };
@@ -204,7 +204,7 @@ function lastKnownGood(structured: boolean): FreeModel[] {
  *
  * Used when the static pools already have healthy providers, so discovery never
  * costs the user latency for models that sit at the back of the chain anyway.
- * Returns an empty list on a cold isolate — correct, because the caller has
+ * Returns an empty list on a cold isolate, correct, because the caller has
  * better options and the next request will have the warmed cache.
  */
 export function peekFreeModels(options: { structured: boolean }): FreeModel[] {

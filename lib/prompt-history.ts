@@ -35,7 +35,7 @@ export function saveToHistory(entry: Omit<HistoryEntry, "id" | "timestamp">): vo
     const updated = [newEntry, ...history].slice(0, MAX_ENTRIES);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   } catch {
-    // localStorage may be full or unavailable — fail silently
+    // localStorage may be full or unavailable, fail silently
   }
 }
 

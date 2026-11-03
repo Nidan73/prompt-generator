@@ -667,7 +667,7 @@ export default function AdminPage() {
                       </span>
                     </td>
                     <td className="py-3 px-6 text-zinc-400">{p.failures}</td>
-                    <td className="py-3 px-6 text-zinc-400">{p.lastLatencyMs ? `${p.lastLatencyMs} ms` : "—"}</td>
+                    <td className="py-3 px-6 text-zinc-400">{p.lastLatencyMs ? `${p.lastLatencyMs} ms` : "n/a"}</td>
                   </tr>
                 ))}
 
@@ -688,7 +688,7 @@ export default function AdminPage() {
                       </span>
                     </td>
                     <td className="py-3 px-6 text-zinc-400">{p.failures}</td>
-                    <td className="py-3 px-6 text-zinc-400">{p.lastLatencyMs ? `${p.lastLatencyMs} ms` : "—"}</td>
+                    <td className="py-3 px-6 text-zinc-400">{p.lastLatencyMs ? `${p.lastLatencyMs} ms` : "n/a"}</td>
                   </tr>
                 ))}
               </tbody>

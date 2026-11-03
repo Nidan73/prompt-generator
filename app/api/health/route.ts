@@ -19,7 +19,7 @@ export async function GET() {
     refine: getPoolRuntimeStatus("refine", REFINE_POOL),
   };
   // `usable` counts request-time OpenRouter discovery, which the static pools do
-  // not list — an OpenRouter-only deployment generates fine and must not be
+  // not list, an OpenRouter-only deployment generates fine and must not be
   // reported as degraded.
   const ready = upstashConfigured && pools.generate.usable;
 

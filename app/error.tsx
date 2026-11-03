@@ -20,7 +20,7 @@ export default function Error({
           Something went wrong
         </h2>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-rose-700 dark:text-rose-300">
-          An unexpected error occurred. This is usually temporary — please try
+          An unexpected error occurred. This is usually temporary. Please try
           again.
         </p>
         <button

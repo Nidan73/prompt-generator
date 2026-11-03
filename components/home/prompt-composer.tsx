@@ -122,7 +122,7 @@ export function PromptComposer({
             exit="exit"
             className="mt-3 text-sm font-medium text-amber-700 dark:text-amber-400"
           >
-            Add a bit more detail — describe what you want to build or accomplish.
+            Add a bit more detail: describe what you want to build or accomplish.
           </m.p>
         ) : null}
       </AnimatePresence>
@@ -138,7 +138,7 @@ export function PromptComposer({
             className="mt-3 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300"
           >
             <Globe className="h-3.5 w-3.5" />
-            {isExtracting ? "Extracting page content..." : "URL detected — context will be injected"}
+            {isExtracting ? "Extracting page content..." : "URL detected: context will be injected"}
           </m.div>
         )}
       </AnimatePresence>

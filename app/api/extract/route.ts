@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
   const { url } = parsed.data;
 
-  // Cheap syntax rejection also happens before metering — a blocked URL is a
+  // Cheap syntax rejection also happens before metering, a blocked URL is a
   // client mistake, not consumption.
   const syntaxCheck = checkUrlSyntax(url);
   if (!syntaxCheck.ok) {
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * Jina's reader renders JS-heavy pages we cannot. It fetches from its own
- * infrastructure, so the URL is validated before we hand it over — and that
+ * infrastructure, so the URL is validated before we hand it over, and that
  * hand-off is disclosed in the privacy policy.
  */
 async function tryJinaReader(url: string): Promise<ExtractionResult> {
@@ -261,7 +261,7 @@ async function tryDirectFetch(url: string): Promise<ExtractionResult> {
  * Reads at most `maxBytes` and returns what arrived.
  *
  * This used to return null on overflow, throwing away a perfectly good page
- * because its HTML was larger than the cap — and we only ever keep the first
+ * because its HTML was larger than the cap, and we only ever keep the first
  * few thousand characters anyway. Truncating is the useful behaviour.
  */
 async function readTextWithinLimit(response: Response, maxBytes: number): Promise<string | null> {

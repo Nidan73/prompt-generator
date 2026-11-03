@@ -131,7 +131,7 @@ export function logApiEvent(event: ApiLogEvent) {
  * Log now, count later.
  *
  * The Redis pipeline used to be awaited inline, which put a round-trip in front
- * of every response — including the streaming ones, where it landed squarely on
+ * of every response, including the streaming ones, where it landed squarely on
  * time-to-first-token. `after()` runs it once the response is on its way
  * (backed by waitUntil on Vercel), so metering no longer costs the user latency.
  */

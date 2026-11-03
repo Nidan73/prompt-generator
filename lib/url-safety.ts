@@ -26,7 +26,7 @@ import { Agent, fetch as undiciFetch } from "undici";
 
 // ─── Address Parsing ───────────────────────────────────────────────────────────
 
-/** Dotted-quad only — WHATWG URL has already normalised decimal/octal/hex forms. */
+/** Dotted-quad only, WHATWG URL has already normalised decimal/octal/hex forms. */
 export function parseIpv4(host: string): number[] | null {
   const parts = host.split(".");
   if (parts.length !== 4) return null;
@@ -121,7 +121,7 @@ export function isPrivateIpv6(bytes: number[]): boolean {
   const isLoopback = bytes.slice(0, 15).every((byte) => byte === 0) && bytes[15] === 1;
   if (isLoopback) return true; // ::1
 
-  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible — judge the embedded IPv4.
+  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible, judge the embedded IPv4.
   const first10Zero = bytes.slice(0, 10).every((byte) => byte === 0);
   if (first10Zero && bytes[10] === 0xff && bytes[11] === 0xff) {
     return isPrivateIpv4(bytes.slice(12));

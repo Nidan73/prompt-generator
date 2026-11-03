@@ -4,9 +4,9 @@ import { createTextStreamResponse } from "ai";
  * Streaming Fallback Guard
  *
  * `toTextStreamResponse()` returns a 200 the moment the model call resolves,
- * before the model has produced a single token. If the provider then dies —
+ * before the model has produced a single token. If the provider then dies:
  * which free-tier models do routinely, e.g. "ResourceExhausted: Worker local
- * total request limit reached (32/32)" — the headers are already sent, the
+ * total request limit reached (32/32)", the headers are already sent, the
  * route cannot try the next provider, and the client waits out the request for
  * a zero-byte 200.
  *
@@ -37,7 +37,7 @@ type StreamPart = {
  * Turn a `fullStream` into a text stream that actually fails on failure.
  *
  * `result.textStream` cannot be used for this. The AI SDK reports a provider
- * error as an ordinary `{type:"error"}` part and then *closes* the stream —
+ * error as an ordinary `{type:"error"}` part and then *closes* the stream:
  * `streamObject`'s text transform has a literal `case "error": break;`, and
  * `streamText`'s forwards only `text-delta`. So a dying provider looks exactly
  * like a provider that finished, and every guard downstream reads `done: true`.

@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     "What the Bhai Thik Kor website and browser extension send, store, and never collect.",
 };
 
-const UPDATED = "10 August 2026";
+const UPDATED = "4 November 2026";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -28,8 +28,8 @@ export default function PrivacyPage() {
 
       <Section title="What we send">
         <p>
-          Bhai Thik Kor improves prompts. When you ask for an improvement — by clicking a button,
-          using the right-click menu, or pressing the keyboard shortcut — the text you selected or
+          Bhai Thik Kor improves prompts. When you ask for an improvement (by clicking a button,
+          using the right-click menu, or pressing the keyboard shortcut), the text you selected or
           typed is sent to our server at bhaithikkor.vercel.app, improved by an AI model, and sent
           back to you.
         </p>
@@ -49,13 +49,24 @@ export default function PrivacyPage() {
 
       <Section title="What we store">
         <p>
-          We do not keep your prompts. Our servers log only operational data — which endpoint was
+          We do not keep your prompts. Our servers log only operational data: which endpoint was
           called, whether it succeeded, how long it took, how many characters were sent, and the
-          coarse type of any error. That data contains no prompt text and expires after 14 days.
+          coarse type of any error. Error logs record the error type and status only, never prompt
+          text. That data expires after 14 days.
         </p>
         <p>
-          We use your IP address to enforce rate limits (50 improvements per day). It is not stored
-          alongside your prompt text and is not used to build a profile.
+          We use your IP address to enforce rate limits, with a separate daily limit for each
+          feature (50 improvements per day, plus caps on guided questions, tweaks, and link
+          reading). For IPv6 addresses we use the surrounding /64 network instead of the full
+          address. It is held only for the length of the limit window, at most one day, is not
+          stored alongside your prompt text, and is not used to build a profile.
+        </p>
+        <p>
+          On the website, your last 10 generated prompts are kept in your browser&apos;s local
+          storage so you can reopen them. They stay on your device, and the Clear button in the
+          history panel removes them. The Share button puts the prompt in the part of the link
+          after the <span className="font-mono text-sm">#</span>, which browsers do not send to
+          any server.
         </p>
         <p>
           The extension&apos;s optional history is off by default. When you turn it on, your last 50
@@ -70,14 +81,14 @@ export default function PrivacyPage() {
           <li>We do not sell your data.</li>
           <li>We do not use your prompts for advertising or tracking.</li>
           <li>We do not require an account, and we do not know who you are.</li>
-          <li>We do not put your prompt text into any website address.</li>
+          <li>The extension never puts your prompt text into any website address.</li>
         </ul>
       </Section>
 
       <Section title="AI providers">
         <p>
-          To improve a prompt we pass your text to one of our model providers — Groq, Google
-          (Gemini), or OpenRouter — under their API terms. We send only your prompt text and any
+          To improve a prompt we pass your text to one of our model providers (Groq, Google
+          (Gemini), or OpenRouter) under their API terms. We send only your prompt text and any
           clarifications you provided.
         </p>
       </Section>
@@ -102,17 +113,17 @@ export default function PrivacyPage() {
           <li>
             <strong className="font-semibold text-slate-900 dark:text-slate-100">
               Access to sites you visit
-            </strong>{" "}
-            — so the improve button can appear next to the text box you are writing in. You can turn
+            </strong>
+            : so the improve button can appear next to the text box you are writing in. You can turn
             this off globally or per site in the extension&apos;s settings.
           </li>
           <li>
-            <strong className="font-semibold text-slate-900 dark:text-slate-100">Storage</strong> —
+            <strong className="font-semibold text-slate-900 dark:text-slate-100">Storage</strong>:
             to remember your settings and, if you enable it, your local history.
           </li>
           <li>
-            <strong className="font-semibold text-slate-900 dark:text-slate-100">Context menu</strong>{" "}
-            — for the right-click &quot;Improve with Bhai Thik Kor&quot; entry.
+            <strong className="font-semibold text-slate-900 dark:text-slate-100">Context menu</strong>
+            : for the right-click &quot;Improve with Bhai Thik Kor&quot; entry.
           </li>
         </ul>
       </Section>

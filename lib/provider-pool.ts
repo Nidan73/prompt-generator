@@ -5,7 +5,7 @@ import type { LanguageModel } from "ai";
 import { getFreeModels, peekFreeModels } from "./openrouter-free";
 
 /**
- * Provider Pool — Round-Robin Load Balancer (AI SDK Streaming Version)
+ * Provider Pool: Round-Robin Load Balancer (AI SDK Streaming Version)
  *
  * Instead of a static fallback chain that hammers one provider until it dies,
  * this module spreads requests across the available models with a round-robin
@@ -13,7 +13,7 @@ import { getFreeModels, peekFreeModels } from "./openrouter-free";
  *
  * What is and is not shared across instances: the cooldown state is (via Redis,
  * see below) because re-probing a provider everyone else already knows is down
- * costs a real API call and real latency. The counter is not — it starts at a
+ * costs a real API call and real latency. The counter is not, it starts at a
  * random offset per isolate, which spreads cold starts across the pool without
  * charging every request a round-trip for perfectly even distribution.
  */
@@ -53,7 +53,7 @@ const providerHealth = new Map<string, ProviderHealth>();
  * gets re-probed by each new isolate and the front of the chain absorbs most of
  * the traffic. The circuit breaker is the part worth sharing, so cooldowns go to
  * Redis (read at most once per REFRESH window, written fire-and-forget) while
- * the counter just starts at a random offset — enough to spread cold isolates
+ * the counter just starts at a random offset, enough to spread cold isolates
  * across the pool without putting a round-trip on every request.
  */
 const SHARED_COOLDOWN_KEY = "btq:provider-cooldown";
@@ -226,7 +226,7 @@ export function recordProviderFailure(poolName: string, providerName: string) {
 
 /**
  * OpenRouter models are discovered per request rather than listed in the static
- * pools, so readiness has to consider the key on its own — otherwise a
+ * pools, so readiness has to consider the key on its own, otherwise a
  * deployment configured with only OPENROUTER_API_KEY reports zero providers and
  * /api/health returns 503 while generation is in fact working.
  */
@@ -286,7 +286,7 @@ export const GENERATE_POOL: ProviderConfig[] = [
   geminiModel("Gemini 3.6 Flash", "gemini-3.6-flash"),
   geminiModel("Gemini 3.5 Flash Lite", "gemini-3.5-flash-lite"),
   geminiModel("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
-  // OpenRouter free models are appended at request time by getChain() — their
+  // OpenRouter free models are appended at request time by getChain(), their
   // IDs change too often to pin here.
 ];
 
@@ -327,7 +327,7 @@ const counters = new Map<string, number>();
 /**
  * The stored counter must be taken modulo the *current* pool size.
  *
- * Chain length varies per request — discovery returns 0-4 OpenRouter models, the
+ * Chain length varies per request, discovery returns 0-4 OpenRouter models, the
  * structured/unstructured filters differ, and cooldowns remove entries. Without
  * the modulo a stored index could exceed the pool, making `slice(startIndex)`
  * empty so the chain came back unrotated and the already-hot first provider took
@@ -371,7 +371,7 @@ async function getOpenRouterFreeProviders(
 ): Promise<ProviderConfig[]> {
   if (!process.env.OPENROUTER_API_KEY) return [];
 
-  // When the static pools can serve the request, never wait on discovery — the
+  // When the static pools can serve the request, never wait on discovery, the
   // catalogue fetch would otherwise sit in front of the user's first token on
   // every cold isolate, for models that are the last resort in the chain.
   if (!blocking) return toProviderConfigs(peekFreeModels({ structured }));

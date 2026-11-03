@@ -2,7 +2,7 @@
  * Rate Limiter Construction
  *
  * `Redis.fromEnv()` throws when the Upstash variables are absent. Called at
- * module scope — as every route used to — that turns a missing env var into an
+ * module scope, as every route used to, that turns a missing env var into an
  * import-time crash, so the route 500s before its handler ever runs and the
  * error says nothing about configuration.
  *

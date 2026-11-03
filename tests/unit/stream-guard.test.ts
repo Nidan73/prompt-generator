@@ -7,7 +7,7 @@ import {
 
 /**
  * Mirrors what the AI SDK actually puts on `fullStream`. A provider failure is a
- * normal `{type:"error"}` part followed by a clean close — never a stream error —
+ * normal `{type:"error"}` part followed by a clean close, never a stream error:
  * which is why reading `result.textStream` cannot detect it.
  */
 function fullStreamOf(parts: Array<Record<string, unknown>>) {
@@ -40,7 +40,7 @@ function streamOf(chunks: string[]): ReadableStream<string> {
   });
 }
 
-/** A stream that yields some chunks, then fails — the mid-stream death case. */
+/** A stream that yields some chunks, then fails, the mid-stream death case. */
 function streamThatFailsAfter(chunks: string[], error: Error): ReadableStream<string> {
   let index = 0;
   return new ReadableStream<string>({
