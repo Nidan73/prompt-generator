@@ -5,6 +5,7 @@ import {
   GENERATE_POOL,
   REFINE_POOL,
   getPoolRuntimeStatus,
+  syncSharedCooldowns,
 } from "@/lib/provider-pool";
 import { Redis } from "@upstash/redis";
 
@@ -207,6 +208,7 @@ export async function GET(request: NextRequest) {
     fetchRedisMetrics(),
   ]);
 
+  await syncSharedCooldowns();
   const pools = {
     generate: getPoolRuntimeStatus("generate", GENERATE_POOL),
     clarify: getPoolRuntimeStatus("clarify", CLARIFY_POOL),

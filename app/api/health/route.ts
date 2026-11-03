@@ -4,12 +4,14 @@ import {
   GENERATE_POOL,
   REFINE_POOL,
   getPoolRuntimeStatus,
+  syncSharedCooldowns,
 } from "@/lib/provider-pool";
 import { isRateLimitStoreConfigured } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
-export function GET() {
+export async function GET() {
+  await syncSharedCooldowns();
   const upstashConfigured = isRateLimitStoreConfigured();
   const pools = {
     generate: getPoolRuntimeStatus("generate", GENERATE_POOL),

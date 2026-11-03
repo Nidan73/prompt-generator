@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminAuthorized } from "@/lib/admin-auth";
-import { Redis } from "@upstash/redis";
+import { resetAllCooldowns } from "@/lib/provider-pool";
 
 export const runtime = "nodejs";
 
@@ -14,19 +14,20 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     if (action === "reset_cooldowns") {
-      try {
-        const redis = Redis.fromEnv();
-        await redis.del("btq:provider-cooldown");
+      const { sharedCleared } = await resetAllCooldowns();
+      if (sharedCleared) {
         return NextResponse.json({
           success: true,
-          message: "All provider cooldowns and circuit breakers have been reset.",
-        });
-      } catch (err) {
-        return NextResponse.json({
-          success: true,
-          message: "Local memory cooldowns reset (Redis was unreachable).",
+          message: "Cooldowns cleared. Other instances apply the reset within 10 seconds.",
         });
       }
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Cleared this instance only: the shared cooldown store was unreachable.",
+        },
+        { status: 503 },
+      );
     }
 
     if (action === "ping_providers") {

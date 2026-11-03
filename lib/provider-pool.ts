@@ -58,6 +58,9 @@ const providerHealth = new Map<string, ProviderHealth>();
  */
 const SHARED_COOLDOWN_KEY = "btq:provider-cooldown";
 const SHARED_COOLDOWN_REFRESH_MS = 10_000;
+const SHARED_RESET_KEY = "btq:provider-cooldown-reset-at";
+
+let lastAppliedResetAt = 0;
 
 let sharedCooldowns: { fetchedAt: number; entries: Map<string, number> } | null = null;
 
@@ -96,8 +99,9 @@ function isCoolingDown(poolName: string, providerName: string, now = Date.now())
 /**
  * Refreshes the shared cooldown view at most once per REFRESH window, so the
  * extra Redis hop is amortised across requests instead of charged to each one.
+ * Also picks up admin resets made on other instances.
  */
-async function refreshSharedCooldowns(): Promise<void> {
+export async function syncSharedCooldowns(): Promise<void> {
   const now = Date.now();
   if (sharedCooldowns && now - sharedCooldowns.fetchedAt < SHARED_COOLDOWN_REFRESH_MS) return;
 
@@ -105,7 +109,10 @@ async function refreshSharedCooldowns(): Promise<void> {
   if (!redis) return;
 
   try {
-    const raw = await redis.hgetall<Record<string, string | number>>(SHARED_COOLDOWN_KEY);
+    const [raw, resetAt] = await Promise.all([
+      redis.hgetall<Record<string, string | number>>(SHARED_COOLDOWN_KEY),
+      redis.get<string | number>(SHARED_RESET_KEY),
+    ]);
     const entries = new Map<string, number>();
 
     for (const [key, value] of Object.entries(raw ?? {})) {
@@ -114,10 +121,49 @@ async function refreshSharedCooldowns(): Promise<void> {
     }
 
     sharedCooldowns = { fetchedAt: now, entries };
+
+    const resetTs = Number(resetAt);
+    if (Number.isFinite(resetTs) && resetTs > lastAppliedResetAt) {
+      applyResetLocally(resetTs);
+    }
   } catch {
     // A cooldown we cannot read is not worth failing a request over; the
     // in-memory view still applies.
     sharedCooldowns = { fetchedAt: now, entries: sharedCooldowns?.entries ?? new Map() };
+  }
+}
+
+// Only entries that last failed before the reset are cleared: a failure after
+// it is new information the admin did not intend to wipe.
+function applyResetLocally(resetTs: number): void {
+  lastAppliedResetAt = resetTs;
+
+  for (const [key, health] of providerHealth) {
+    if ((health.lastFailureAt ?? 0) <= resetTs) {
+      providerHealth.set(key, { ...health, failures: 0, coolingDownUntil: 0 });
+    }
+  }
+}
+
+/**
+ * Clears cooldowns on this instance and, when Redis is reachable, for every
+ * other instance. sharedCleared is true only if both Redis writes succeeded.
+ */
+export async function resetAllCooldowns(): Promise<{ sharedCleared: boolean }> {
+  const resetTs = Date.now();
+  providerHealth.clear();
+  sharedCooldowns = null;
+  lastAppliedResetAt = resetTs;
+
+  const redis = getPoolRedis();
+  if (!redis) return { sharedCleared: false };
+
+  try {
+    await redis.del(SHARED_COOLDOWN_KEY);
+    await redis.set(SHARED_RESET_KEY, resetTs, { ex: 3600 });
+    return { sharedCleared: true };
+  } catch {
+    return { sharedCleared: false };
   }
 }
 
@@ -193,7 +239,8 @@ export function getPoolRuntimeStatus(poolName: string, pool: ProviderConfig[]) {
   const configured = pool.filter((provider) => provider.hasKey);
   const providers = configured.map((provider) => {
     const health = readProviderHealth(poolName, provider.name);
-    const coolingDownForMs = Math.max(0, health.coolingDownUntil - now);
+    const sharedUntil = sharedCooldowns?.entries.get(healthKey(poolName, provider.name)) ?? 0;
+    const coolingDownForMs = Math.max(0, health.coolingDownUntil - now, sharedUntil - now);
 
     return {
       name: provider.name,
@@ -349,7 +396,7 @@ export async function getChain(
   pool: ProviderConfig[],
   options: { structured: boolean },
 ): Promise<ProviderConfig[]> {
-  await refreshSharedCooldowns();
+  await syncSharedCooldowns();
 
   // Only pay for discovery when the static pool cannot serve this request.
   const staticallyReady = pool.some(

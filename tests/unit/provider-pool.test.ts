@@ -1,9 +1,47 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getRotatedChain,
   PINNED_POOLS,
   type ProviderConfig,
 } from "../../lib/provider-pool";
+
+// In-memory stand-in for Upstash, shared by every module instance in a test.
+const fake = vi.hoisted(() => ({
+  hashes: new Map<string, Record<string, number>>(),
+  values: new Map<string, unknown>(),
+  broken: false,
+}));
+
+vi.mock("@upstash/redis", () => ({
+  Redis: {
+    fromEnv() {
+      if (fake.broken) throw new Error("no redis env");
+      return {
+        hgetall: async (key: string) => fake.hashes.get(key) ?? null,
+        get: async (key: string) => fake.values.get(key) ?? null,
+        hset: async (key: string, fields: Record<string, number>) => {
+          fake.hashes.set(key, { ...(fake.hashes.get(key) ?? {}), ...fields });
+          return 1;
+        },
+        hdel: async (key: string, field: string) => {
+          const hash = fake.hashes.get(key);
+          if (hash) delete hash[field];
+          return 1;
+        },
+        del: async (key: string) => {
+          fake.hashes.delete(key);
+          fake.values.delete(key);
+          return 1;
+        },
+        set: async (key: string, value: unknown) => {
+          fake.values.set(key, value);
+          return "OK";
+        },
+        expire: async () => 1,
+      };
+    },
+  },
+}));
 
 function poolOf(names: string[]): ProviderConfig[] {
   return names.map((name) => ({
@@ -91,5 +129,76 @@ describe("getRotatedChain", () => {
       const chain = getRotatedChain("test-order", pool);
       expect(new Set(chain.map((p) => p.name))).toEqual(new Set(["a", "b", "c"]));
     }
+  });
+});
+
+describe("shared cooldown status and reset", () => {
+  const pool = poolOf(["a", "b"]);
+
+  async function freshPool() {
+    vi.resetModules();
+    return import("../../lib/provider-pool");
+  }
+
+  beforeEach(() => {
+    fake.hashes.clear();
+    fake.values.clear();
+    fake.broken = false;
+  });
+
+  it("reports a provider cooled down only in the shared hash", async () => {
+    fake.hashes.set("btq:provider-cooldown", { "p:a": Date.now() + 60_000 });
+    const mod = await freshPool();
+
+    await mod.syncSharedCooldowns();
+    const status = mod.getPoolRuntimeStatus("p", pool);
+    const a = status.providers.find((p) => p.name === "a");
+
+    expect(a?.status).toBe("cooling_down");
+    expect(a?.coolingDownForMs).toBeGreaterThan(0);
+    expect(status.coolingDown).toBe(1);
+  });
+
+  it("resetAllCooldowns clears shared and local cooldowns", async () => {
+    const mod = await freshPool();
+    mod.recordProviderFailure("p", "a");
+    mod.recordProviderFailure("p", "a");
+    fake.hashes.set("btq:provider-cooldown", { "p:b": Date.now() + 60_000 });
+    await mod.syncSharedCooldowns();
+    expect(mod.getPoolRuntimeStatus("p", pool).coolingDown).toBe(2);
+
+    await expect(mod.resetAllCooldowns()).resolves.toEqual({ sharedCleared: true });
+
+    expect(mod.getPoolRuntimeStatus("p", pool).coolingDown).toBe(0);
+    expect(fake.hashes.has("btq:provider-cooldown")).toBe(false);
+    expect(fake.values.get("btq:provider-cooldown-reset-at")).toBeTypeOf("number");
+  });
+
+  it("another instance applies the reset on its next sync", async () => {
+    const other = await freshPool();
+    other.recordProviderFailure("p", "a");
+    other.recordProviderFailure("p", "a");
+    expect(other.getPoolRuntimeStatus("p", pool).coolingDown).toBe(1);
+
+    // The admin's instance is a separate module copy sharing only Redis.
+    vi.resetModules();
+    const admin = await import("../../lib/provider-pool");
+    await admin.resetAllCooldowns();
+
+    await other.syncSharedCooldowns();
+    const status = other.getPoolRuntimeStatus("p", pool);
+    expect(status.coolingDown).toBe(0);
+    expect(status.providers.find((p) => p.name === "a")?.failures).toBe(0);
+  });
+
+  it("still clears local state when Redis is unavailable", async () => {
+    fake.broken = true;
+    const broken = await freshPool();
+    broken.recordProviderFailure("p", "a");
+    broken.recordProviderFailure("p", "a");
+    expect(broken.getPoolRuntimeStatus("p", pool).coolingDown).toBe(1);
+
+    await expect(broken.resetAllCooldowns()).resolves.toEqual({ sharedCleared: false });
+    expect(broken.getPoolRuntimeStatus("p", pool).coolingDown).toBe(0);
   });
 });
