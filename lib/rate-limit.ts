@@ -21,7 +21,11 @@ export type LimitDecision = {
   reset: number;
   /** True when no store was reachable and the request was allowed unmetered. */
   degraded: boolean;
+  /** Which kind of limiter produced this decision. */
+  scope: LimitScope;
 };
+
+export type LimitScope = "minute" | "day" | "window";
 
 let sharedRedis: Redis | null | undefined;
 
@@ -49,13 +53,14 @@ export function isRateLimitStoreConfigured(): boolean {
 }
 
 /** An allow-everything decision, used whenever the store cannot answer. */
-function unmetered(limit: number): LimitDecision {
+function unmetered(limit: number, scope: LimitScope): LimitDecision {
   return {
     success: true,
     limit,
     remaining: limit,
     reset: Date.now() + 60_000,
     degraded: true,
+    scope,
   };
 }
 
@@ -73,6 +78,7 @@ export function createRateLimit(options: {
   tokens: number;
   window: Parameters<typeof Ratelimit.slidingWindow>[1];
   prefix: string;
+  scope: LimitScope;
 }): RateLimitHandle {
   let limiter: Ratelimit | null | undefined;
 
@@ -84,7 +90,7 @@ export function createRateLimit(options: {
       ? new Ratelimit({
           redis,
           limiter: Ratelimit.slidingWindow(options.tokens, options.window),
-          analytics: true,
+          analytics: false,
           prefix: options.prefix,
         })
       : null;
@@ -95,7 +101,7 @@ export function createRateLimit(options: {
   return {
     async check(identifier: string): Promise<LimitDecision> {
       const active = getLimiter();
-      if (!active) return unmetered(options.tokens);
+      if (!active) return unmetered(options.tokens, options.scope);
 
       try {
         const result = await active.limit(identifier);
@@ -105,6 +111,7 @@ export function createRateLimit(options: {
           remaining: result.remaining,
           reset: result.reset,
           degraded: false,
+          scope: options.scope,
         };
       } catch (error) {
         console.warn(
@@ -115,8 +122,29 @@ export function createRateLimit(options: {
             detail: error instanceof Error ? error.message : String(error),
           }),
         );
-        return unmetered(options.tokens);
+        return unmetered(options.tokens, options.scope);
       }
     },
   };
+}
+
+/**
+ * Check limiters in order and stop at the first denial, so a request already
+ * refused by the per-minute limit does not also spend daily quota. When all
+ * pass, the tightest remaining count is reported to the client.
+ */
+export async function checkRateLimits(
+  identifier: string,
+  handles: RateLimitHandle[],
+): Promise<LimitDecision> {
+  let tightest: LimitDecision | undefined;
+
+  for (const handle of handles) {
+    const decision = await handle.check(identifier);
+    if (!decision.success) return decision;
+    if (!tightest || decision.remaining < tightest.remaining) tightest = decision;
+  }
+
+  if (!tightest) throw new Error("checkRateLimits requires at least one handle");
+  return tightest;
 }

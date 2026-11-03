@@ -1,5 +1,6 @@
 import { after, type NextRequest } from "next/server";
 import { Redis } from "@upstash/redis";
+import { parseIpv6 } from "./url-safety";
 
 type RateLimitResult = {
   limit: number;
@@ -34,11 +35,31 @@ function getMetricsRedis() {
   return metricsRedis;
 }
 
+/**
+ * Rate-limit key for a client address. A single IPv6 subscriber usually holds a
+ * whole /64, so keying on the full address lets one client mint endless fresh
+ * keys; the /64 prefix is the unit that actually identifies them.
+ */
+export function normalizeClientKey(raw: string): string {
+  const value = raw.trim();
+  const bytes = parseIpv6(value);
+  if (!bytes) return value;
+
+  const mapped = bytes.slice(0, 10).every((b) => b === 0) && bytes[10] === 0xff && bytes[11] === 0xff;
+  if (mapped) return bytes.slice(12).join(".");
+
+  const groups: string[] = [];
+  for (let i = 0; i < 8; i += 2) {
+    groups.push((((bytes[i] ?? 0) << 8) | (bytes[i + 1] ?? 0)).toString(16));
+  }
+  return `${groups.join(":")}::/64`;
+}
+
 export function getClientIdentifier(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const realIp = request.headers.get("x-real-ip");
   const cloudflareIp = request.headers.get("cf-connecting-ip");
-  return forwardedFor || realIp || cloudflareIp || "anonymous";
+  return normalizeClientKey(forwardedFor || realIp || cloudflareIp || "anonymous");
 }
 
 export function rateLimitHeaders(limit: RateLimitResult): HeadersInit {
@@ -114,8 +135,12 @@ export function logApiEvent(event: ApiLogEvent) {
  * time-to-first-token. `after()` runs it once the response is on its way
  * (backed by waitUntil on Vercel), so metering no longer costs the user latency.
  */
-export function trackApiEvent(event: ApiLogEvent): void {
+export function trackApiEvent(event: ApiLogEvent, options: { persist?: boolean } = {}): void {
   logApiEvent(event);
+
+  // Requests rejected before rate limiting are free for an attacker to send, so
+  // counting them in Redis would let anyone drive our command usage.
+  if (options.persist === false) return;
 
   const record = () =>
     recordUsageCounters(event).catch(() => {

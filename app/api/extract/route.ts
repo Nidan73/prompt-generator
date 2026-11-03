@@ -7,7 +7,7 @@ import {
   retryAfterSeconds,
   trackApiEvent,
 } from "@/lib/api-observability";
-import { createRateLimit } from "@/lib/rate-limit";
+import { checkRateLimits, createRateLimit } from "@/lib/rate-limit";
 import { checkUrlSyntax, checkUrlWithDns, safeFetch } from "@/lib/url-safety";
 
 // node, not edge: the SSRF guard resolves hostnames before fetching them, and
@@ -18,6 +18,14 @@ const ratelimit = createRateLimit({
   tokens: 5,
   window: "1 m",
   prefix: "@prompt-generator/extract",
+  scope: "minute",
+});
+
+const dailyRatelimit = createRateLimit({
+  tokens: 60,
+  window: "1 d",
+  prefix: "@prompt-generator/extract-daily",
+  scope: "day",
 });
 
 const MAX_CONTENT_LENGTH = 3000;
@@ -45,7 +53,7 @@ export async function POST(request: NextRequest) {
       event: "validation_failed",
       status: parsed.error.status,
       durationMs: Date.now() - startedAt,
-    });
+    }, { persist: false });
     return parsed.error;
   }
 
@@ -61,7 +69,7 @@ export async function POST(request: NextRequest) {
       status: 400,
       durationMs: Date.now() - startedAt,
       details: { reason: syntaxCheck.reason, host: safeHostname(url) },
-    });
+    }, { persist: false });
     return NextResponse.json(
       { error: "This URL cannot be extracted for safety reasons." },
       { status: 400 },
@@ -69,7 +77,7 @@ export async function POST(request: NextRequest) {
   }
 
   const identifier = getClientIdentifier(request);
-  const limit = await ratelimit.check(identifier);
+  const limit = await checkRateLimits(identifier, [ratelimit, dailyRatelimit]);
 
   if (!limit.success) {
     const retryAfter = retryAfterSeconds(limit.reset);
@@ -81,7 +89,13 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { error: "Rate limit exceeded. Please wait before trying again.", retryAfter },
+      {
+        error:
+          limit.scope === "day"
+            ? "Daily limit reached for this feature. Please try again tomorrow."
+            : "Rate limit exceeded. Please wait before trying again.",
+        retryAfter,
+      },
       {
         status: 429,
         headers: {

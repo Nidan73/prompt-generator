@@ -37,6 +37,7 @@ const generateRateLimit = createRateLimit({
   tokens: 50,
   window: "1 d",
   prefix: "prompt-gen-api",
+  scope: "day",
 });
 
 const BASE_SYSTEM_PROMPT = `You are Bhai Thik Kor: world-class prompt optimizer and AI platform router.
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
         event: "validation_failed",
         status: parsed.error.status,
         durationMs: Date.now() - startedAt,
-      });
+      }, { persist: false });
       return parsed.error;
     }
 

@@ -1,6 +1,74 @@
 import { APICallError } from "ai";
-import { describe, expect, it } from "vitest";
-import { classifyError, describeError } from "../../lib/api-observability";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const exec = vi.fn(async () => []);
+const pipelineStub = { incr: vi.fn(), incrby: vi.fn(), expire: vi.fn(), exec };
+
+vi.mock("@upstash/redis", () => ({
+  Redis: { fromEnv: () => ({ pipeline: () => pipelineStub }) },
+}));
+
+// Throwing forces trackApiEvent onto its synchronous fallback path.
+vi.mock("next/server", () => ({
+  after: () => {
+    throw new Error("outside request scope");
+  },
+}));
+
+import {
+  classifyError,
+  describeError,
+  normalizeClientKey,
+  trackApiEvent,
+} from "../../lib/api-observability";
+
+describe("normalizeClientKey", () => {
+  it("keeps IPv4 as is", () => {
+    expect(normalizeClientKey("203.0.113.7")).toBe("203.0.113.7");
+  });
+
+  it("unwraps IPv4-mapped IPv6", () => {
+    expect(normalizeClientKey("::ffff:203.0.113.7")).toBe("203.0.113.7");
+  });
+
+  it("reduces a full IPv6 address to its /64", () => {
+    expect(normalizeClientKey("2001:0db8:abcd:0012:1111:2222:3333:4444")).toBe(
+      "2001:db8:abcd:12::/64",
+    );
+  });
+
+  it("reduces a compressed IPv6 address to its /64", () => {
+    expect(normalizeClientKey("2001:db8::1")).toBe("2001:db8:0:0::/64");
+  });
+
+  it("lowercases hex", () => {
+    expect(normalizeClientKey("2001:DB8:ABCD:12::5")).toBe("2001:db8:abcd:12::/64");
+  });
+
+  it("returns unparseable values trimmed", () => {
+    expect(normalizeClientKey("  not-an-ip  ")).toBe("not-an-ip");
+  });
+});
+
+describe("trackApiEvent persistence", () => {
+  beforeEach(() => {
+    exec.mockClear();
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "token";
+  });
+
+  it("writes counters by default", async () => {
+    trackApiEvent({ route: "t", event: "e", status: 200 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips Redis when persist is false", async () => {
+    trackApiEvent({ route: "t", event: "validation_failed", status: 400 }, { persist: false });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(exec).not.toHaveBeenCalled();
+  });
+});
 
 describe("describeError", () => {
   it("returns only name, statusCode and errorType for provider errors", () => {

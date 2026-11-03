@@ -11,7 +11,7 @@ import {
   trackApiEvent,
 } from "@/lib/api-observability";
 import { buildRefineUserContent } from "@/lib/prompt-envelope";
-import { createRateLimit } from "@/lib/rate-limit";
+import { checkRateLimits, createRateLimit } from "@/lib/rate-limit";
 import {
   REFINE_POOL,
   getChain,
@@ -29,6 +29,14 @@ const ratelimit = createRateLimit({
   tokens: 5,
   window: "1 m",
   prefix: "@prompt-generator/refine",
+  scope: "minute",
+});
+
+const dailyRatelimit = createRateLimit({
+  tokens: 100,
+  window: "1 d",
+  prefix: "@prompt-generator/refine-daily",
+  scope: "day",
 });
 
 const SYSTEM_PROMPT = `You are a precision prompt refiner.
@@ -49,12 +57,12 @@ export async function POST(request: NextRequest) {
       event: "validation_failed",
       status: parsed.error.status,
       durationMs: Date.now() - startedAt,
-    });
+    }, { persist: false });
     return parsed.error;
   }
 
   const identifier = getClientIdentifier(request);
-  const limit = await ratelimit.check(identifier);
+  const limit = await checkRateLimits(identifier, [ratelimit, dailyRatelimit]);
 
   if (!limit.success) {
     const retryAfter = retryAfterSeconds(limit.reset);
@@ -66,7 +74,13 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { error: "Rate limit exceeded. Please wait before trying again.", retryAfter },
+      {
+        error:
+          limit.scope === "day"
+            ? "Daily limit reached for this feature. Please try again tomorrow."
+            : "Rate limit exceeded. Please wait before trying again.",
+        retryAfter,
+      },
       {
         status: 429,
         headers: {

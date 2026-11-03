@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildClarifyUserContent } from "@/lib/prompt-envelope";
-import { createRateLimit } from "@/lib/rate-limit";
+import { checkRateLimits, createRateLimit } from "@/lib/rate-limit";
 import { ClarifyRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   classifyError,
@@ -35,6 +35,14 @@ const ratelimit = createRateLimit({
   tokens: 3,
   window: "1 m",
   prefix: "@prompt-dispatcher/clarify",
+  scope: "minute",
+});
+
+const dailyRatelimit = createRateLimit({
+  tokens: 60,
+  window: "1 d",
+  prefix: "@prompt-dispatcher/clarify-daily",
+  scope: "day",
 });
 
 const SYSTEM_PROMPT = `Generate exactly 3 short, high-impact multiple-choice clarification questions for a vague user prompt.
@@ -68,12 +76,12 @@ export async function POST(request: NextRequest) {
       event: "validation_failed",
       status: parsed.error.status,
       durationMs: Date.now() - startedAt,
-    });
+    }, { persist: false });
     return parsed.error;
   }
 
   const identifier = getClientIdentifier(request);
-  const limit = await ratelimit.check(identifier);
+  const limit = await checkRateLimits(identifier, [ratelimit, dailyRatelimit]);
 
   if (!limit.success) {
     const retryAfter = retryAfterSeconds(limit.reset);
@@ -85,7 +93,13 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { error: "Rate limit exceeded. Please wait before trying again.", retryAfter },
+      {
+        error:
+          limit.scope === "day"
+            ? "Daily limit reached for this feature. Please try again tomorrow."
+            : "Rate limit exceeded. Please wait before trying again.",
+        retryAfter,
+      },
       {
         status: 429,
         headers: {
