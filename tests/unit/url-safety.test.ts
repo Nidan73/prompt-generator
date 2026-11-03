@@ -1,7 +1,10 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import {
   checkUrlSyntax,
   checkUrlWithDns,
+  createValidatingLookup,
   isPrivateAddress,
   isPrivateHostname,
   parseIpv4,
@@ -67,6 +70,126 @@ describe("isPrivateAddress", () => {
     expect(isPrivateAddress("8.8.8.8")).toBe(false);
     expect(isPrivateAddress("172.32.0.1")).toBe(false);
     expect(isPrivateAddress("2606:4700::1111")).toBe(false);
+  });
+});
+
+describe("isPrivateAddress IPv6 transition ranges", () => {
+  it("judges the embedded IPv4 for NAT64 64:ff9b::/96", () => {
+    expect(isPrivateAddress("64:ff9b::a9fe:a9fe")).toBe(true); // 169.254.169.254
+    expect(isPrivateAddress("64:ff9b::7f00:1")).toBe(true); // 127.0.0.1
+    expect(isPrivateAddress("64:ff9b::808:808")).toBe(false); // 8.8.8.8
+  });
+
+  it("blocks local-use NAT64 64:ff9b:1::/48", () => {
+    expect(isPrivateAddress("64:ff9b:1::1")).toBe(true);
+    expect(isPrivateAddress("64:ff9b:1:ffff::808:808")).toBe(true);
+    expect(isPrivateAddress("64:ff9b:2::1")).toBe(false);
+  });
+
+  it("judges the embedded IPv4 for IPv4-translated ::ffff:0:a.b.c.d", () => {
+    expect(isPrivateAddress("::ffff:0:a9fe:a9fe")).toBe(true);
+    expect(isPrivateAddress("::ffff:0:7f00:1")).toBe(true);
+    expect(isPrivateAddress("::ffff:0:808:808")).toBe(false);
+  });
+
+  it("blocks Teredo 2001::/32 but not neighbouring public space", () => {
+    expect(isPrivateAddress("2001:0:4136:e378:8000:63bf:3fff:fdd2")).toBe(true);
+    expect(isPrivateAddress("2001:0:4136::1")).toBe(true);
+    expect(isPrivateAddress("2001:4860::8888")).toBe(false);
+  });
+
+  it("blocks ORCHID and ORCHIDv2", () => {
+    expect(isPrivateAddress("2001:10::1")).toBe(true);
+    expect(isPrivateAddress("2001:1f:ffff::1")).toBe(true);
+    expect(isPrivateAddress("2001:20::1")).toBe(true);
+    expect(isPrivateAddress("2001:2f::1")).toBe(true);
+    expect(isPrivateAddress("2001:30::1")).toBe(false);
+    expect(isPrivateAddress("2001:9::1")).toBe(false);
+  });
+
+  it("blocks documentation 2001:db8::/32", () => {
+    expect(isPrivateAddress("2001:db8::1")).toBe(true);
+    expect(isPrivateAddress("2001:db9::1")).toBe(false);
+  });
+
+  it("blocks deprecated site-local fec0::/10", () => {
+    expect(isPrivateAddress("fec0::1")).toBe(true);
+    expect(isPrivateAddress("feff::1")).toBe(true);
+    expect(isPrivateAddress("ff00::1")).toBe(true);
+    expect(isPrivateAddress("fe00::1")).toBe(false);
+  });
+
+  it("blocks transition addresses in URL form", () => {
+    expect(checkUrlSyntax("http://[64:ff9b::a9fe:a9fe]/")).toMatchObject({
+      ok: false,
+      reason: "private_host",
+    });
+    expect(checkUrlSyntax("http://[64:ff9b::808:808]/")).toMatchObject({ ok: true });
+  });
+});
+
+describe("createValidatingLookup", () => {
+  const lookupAll = (lookup: ReturnType<typeof createValidatingLookup>, host: string) =>
+    new Promise<{ err: NodeJS.ErrnoException | null; result: unknown }>((resolve) => {
+      lookup(host, { all: true }, ((err: NodeJS.ErrnoException | null, result: unknown) =>
+        resolve({ err, result })) as Parameters<typeof lookup>[2]);
+    });
+
+  const lookupOne = (lookup: ReturnType<typeof createValidatingLookup>, host: string) =>
+    new Promise<{ err: NodeJS.ErrnoException | null; address?: string; family?: number }>(
+      (resolve) => {
+        lookup(host, {}, ((err: NodeJS.ErrnoException | null, address?: string, family?: number) =>
+          resolve({ err, address, family })) as Parameters<typeof lookup>[2]);
+      },
+    );
+
+  it("fails with ESSRFBLOCKED when any answer is private (both forms)", async () => {
+    const lookup = createValidatingLookup(async () => ["93.184.216.34", "127.0.0.1"]);
+
+    const all = await lookupAll(lookup, "evil.example");
+    expect(all.err?.code).toBe("ESSRFBLOCKED");
+
+    const one = await lookupOne(lookup, "evil.example");
+    expect(one.err?.code).toBe("ESSRFBLOCKED");
+  });
+
+  it("fails with ESSRFBLOCKED when resolution returns nothing", async () => {
+    const lookup = createValidatingLookup(async () => []);
+    expect((await lookupAll(lookup, "empty.example")).err?.code).toBe("ESSRFBLOCKED");
+    expect((await lookupOne(lookup, "empty.example")).err?.code).toBe("ESSRFBLOCKED");
+  });
+
+  it("yields validated addresses with the right family in the all form", async () => {
+    const lookup = createValidatingLookup(async () => ["93.184.216.34", "2606:4700::1111"]);
+    const { err, result } = await lookupAll(lookup, "ok.example");
+    expect(err).toBeNull();
+    expect(result).toEqual([
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:4700::1111", family: 6 },
+    ]);
+  });
+
+  it("yields the first validated address with its family in the single form", async () => {
+    const v6 = createValidatingLookup(async () => ["2606:4700::1111"]);
+    expect(await lookupOne(v6, "ok.example")).toMatchObject({
+      err: null,
+      address: "2606:4700::1111",
+      family: 6,
+    });
+
+    const v4 = createValidatingLookup(async () => ["93.184.216.34"]);
+    expect(await lookupOne(v4, "ok.example")).toMatchObject({
+      err: null,
+      address: "93.184.216.34",
+      family: 4,
+    });
+  });
+
+  it("passes resolver failures to the callback", async () => {
+    const lookup = createValidatingLookup(async () => {
+      throw new Error("ENOTFOUND");
+    });
+    expect((await lookupOne(lookup, "nope.example")).err).toBeInstanceOf(Error);
   });
 });
 
@@ -159,17 +282,17 @@ describe("checkUrlWithDns", () => {
 describe("safeFetch", () => {
   const publicResolver = async () => ["93.184.216.34"];
 
+  // safeFetch uses undici's own fetch, so tests inject the transport instead of patching globalThis.
   function stubFetch(responses: Response[]) {
     const calls: string[] = [];
-    const original = globalThis.fetch;
     let index = 0;
 
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const fetchImpl = (async (input: RequestInfo | URL) => {
       calls.push(String(input));
       return responses[index++] ?? new Response("done", { status: 200 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
-    return { calls, restore: () => { globalThis.fetch = original; } };
+    return { calls, fetchImpl };
   }
 
   it("refuses to follow a redirect into a private address", async () => {
@@ -177,15 +300,15 @@ describe("safeFetch", () => {
       new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest/" } }),
     ]);
 
-    try {
-      const result = await safeFetch("https://example.com/", {}, { resolver: publicResolver });
-      expect(result).toMatchObject({ ok: false, reason: "private_host" });
-      // The internal address must never have been requested.
-      expect(stub.calls).toHaveLength(1);
-      expect(stub.calls[0]).toContain("example.com");
-    } finally {
-      stub.restore();
-    }
+    const result = await safeFetch(
+      "https://example.com/",
+      {},
+      { resolver: publicResolver, fetchImpl: stub.fetchImpl },
+    );
+    expect(result).toMatchObject({ ok: false, reason: "private_host" });
+    // The internal address must never have been requested.
+    expect(stub.calls).toHaveLength(1);
+    expect(stub.calls[0]).toContain("example.com");
   });
 
   it("follows a public redirect and reports the final URL", async () => {
@@ -194,12 +317,12 @@ describe("safeFetch", () => {
       new Response("hello", { status: 200 }),
     ]);
 
-    try {
-      const result = await safeFetch("https://example.com/start", {}, { resolver: publicResolver });
-      expect(result).toMatchObject({ ok: true, finalUrl: "https://example.com/final" });
-    } finally {
-      stub.restore();
-    }
+    const result = await safeFetch(
+      "https://example.com/start",
+      {},
+      { resolver: publicResolver, fetchImpl: stub.fetchImpl },
+    );
+    expect(result).toMatchObject({ ok: true, finalUrl: "https://example.com/final" });
   });
 
   it("gives up after too many redirects", async () => {
@@ -209,15 +332,39 @@ describe("safeFetch", () => {
       ),
     );
 
+    const result = await safeFetch(
+      "https://example.com/loop",
+      {},
+      { resolver: publicResolver, maxRedirects: 2, fetchImpl: stub.fetchImpl },
+    );
+    expect(result).toMatchObject({ ok: false, reason: "too_many_redirects" });
+  });
+});
+
+describe("safeFetch connection pinning", () => {
+  it("does not let a rebound DNS answer reach a loopback server", async () => {
+    let requests = 0;
+    const server = createServer((_req, res) => {
+      requests += 1;
+      res.end("internal secret");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    // Public on the validation lookup, loopback for every later lookup.
+    let calls = 0;
+    const rebinding = async () => (calls++ === 0 ? ["93.184.216.34"] : ["127.0.0.1"]);
+
     try {
       const result = await safeFetch(
-        "https://example.com/loop",
-        {},
-        { resolver: publicResolver, maxRedirects: 2 },
+        `http://rebind.test:${port}/`,
+        { signal: AbortSignal.timeout(5000) },
+        { resolver: rebinding },
       );
-      expect(result).toMatchObject({ ok: false, reason: "too_many_redirects" });
+      expect(result).toMatchObject({ ok: false });
+      expect(requests).toBe(0);
     } finally {
-      stub.restore();
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 });

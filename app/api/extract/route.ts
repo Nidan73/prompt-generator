@@ -216,6 +216,7 @@ async function tryJinaReader(url: string): Promise<ExtractionResult> {
 async function tryDirectFetch(url: string): Promise<ExtractionResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), URL_TIMEOUT_MS);
+  let dispose: (() => void) | undefined;
 
   try {
     // safeFetch re-validates every redirect hop before following it.
@@ -229,6 +230,7 @@ async function tryDirectFetch(url: string): Promise<ExtractionResult> {
 
     if (!fetched.ok) return null;
 
+    dispose = fetched.dispose;
     const { response, finalUrl } = fetched;
     if (!response.ok) return null;
 
@@ -250,6 +252,8 @@ async function tryDirectFetch(url: string): Promise<ExtractionResult> {
     return null;
   } finally {
     clearTimeout(timeout);
+    // Closes the pinned connection pool once the body has been consumed.
+    dispose?.();
   }
 }
 

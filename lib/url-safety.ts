@@ -15,11 +15,14 @@
  * first and check every address the name resolves to. Redirects get the same
  * treatment per hop, because following a redirect is another outbound request.
  *
- * Residual risk: DNS rebinding between our lookup and the actual connect is not
- * fully solvable without pinning the socket to the validated IP, which fetch()
- * does not expose. Resolve-then-check closes the practical attack; the rebinding
- * race needs an egress proxy or firewall to close completely.
+ * DNS rebinding (a name that answers with a public IP for our check and a private
+ * IP for the real connect) is closed by safeFetch: it uses undici's own fetch with
+ * an Agent whose connect.lookup validates the answer it hands to the socket, so the
+ * address that was checked is the address that gets connected.
  */
+
+import type { LookupFunction } from "node:net";
+import { Agent, fetch as undiciFetch } from "undici";
 
 // ─── Address Parsing ───────────────────────────────────────────────────────────
 
@@ -132,6 +135,32 @@ export function isPrivateIpv6(bytes: number[]): boolean {
   if (bytes[0] === 0xff) return true; // multicast
   if (bytes[0] === 0x20 && bytes[1] === 0x02) return true; // 2002::/16 6to4
   if (bytes[0] === 0x01 && bytes[1] === 0x00) return true; // 100::/64 discard-only
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0xc0) return true; // fec0::/10 deprecated site-local
+
+  // 64:ff9b::/96 NAT64: the gateway connects to the embedded IPv4, so judge that.
+  const isNat64Prefix =
+    bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b;
+  if (isNat64Prefix && bytes.slice(4, 12).every((byte) => byte === 0)) {
+    return isPrivateIpv4(bytes.slice(12));
+  }
+  if (isNat64Prefix && bytes[4] === 0x00 && bytes[5] === 0x01) return true; // 64:ff9b:1::/48 local-use NAT64
+
+  // ::ffff:0:a.b.c.d IPv4-translated (SIIT): judge the embedded IPv4.
+  const isTranslated =
+    bytes.slice(0, 8).every((byte) => byte === 0) &&
+    bytes[8] === 0xff &&
+    bytes[9] === 0xff &&
+    bytes[10] === 0 &&
+    bytes[11] === 0;
+  if (isTranslated) return isPrivateIpv4(bytes.slice(12));
+
+  if (bytes[0] === 0x20 && bytes[1] === 0x01) {
+    if (bytes[2] === 0x00 && bytes[3] === 0x00) return true; // 2001::/32 Teredo
+    if (bytes[2] === 0x00 && ((bytes[3] & 0xf0) === 0x10 || (bytes[3] & 0xf0) === 0x20)) {
+      return true; // 2001:10::/28 ORCHID and 2001:20::/28 ORCHIDv2
+    }
+    if (bytes[2] === 0x0d && bytes[3] === 0xb8) return true; // 2001:db8::/32 documentation
+  }
 
   return false;
 }
@@ -251,50 +280,149 @@ export async function checkUrlWithDns(
   return syntax;
 }
 
+// ─── Connection Pinning ────────────────────────────────────────────────────────
+
+type LookupAddress = { address: string; family: 4 | 6 };
+
+// Same shape net.connect expects; it passes options.all when it wants every address.
+export type ValidatingLookup = LookupFunction;
+
+function blockedError(message: string): NodeJS.ErrnoException {
+  const error: NodeJS.ErrnoException = new Error(message);
+  error.code = "ESSRFBLOCKED";
+  return error;
+}
+
+/**
+ * A socket lookup that only ever returns addresses it has just validated. The
+ * connection uses this answer directly, so a later (rebound) DNS answer cannot
+ * redirect the socket to an internal host.
+ */
+export function createValidatingLookup(resolver: HostResolver): ValidatingLookup {
+  return (hostname, options, lookupCallback) => {
+    const wantsAll = options.all === true;
+    // The declared callback type has no error arm, but node accepts (err) alone.
+    const callback = lookupCallback as (
+      err: NodeJS.ErrnoException | null,
+      addressOrList?: string | LookupAddress[],
+      family?: number,
+    ) => void;
+
+    resolver(hostname).then(
+      (addresses) => {
+        if (addresses.length === 0) {
+          callback(blockedError(`No addresses resolved for ${hostname}`));
+          return;
+        }
+        if (addresses.some(isPrivateAddress)) {
+          callback(blockedError(`${hostname} resolves to a non-public address`));
+          return;
+        }
+
+        const validated: LookupAddress[] = addresses.map((address) => ({
+          address,
+          family: parseIpv4(address) ? 4 : 6,
+        }));
+
+        if (wantsAll) callback(null, validated);
+        else callback(null, validated[0].address, validated[0].family);
+      },
+      (error: NodeJS.ErrnoException) => callback(error),
+    );
+  };
+}
+
+function isBlockedByLookup(error: unknown): boolean {
+  // undici wraps socket errors as TypeError("fetch failed") with the cause chain.
+  for (let current = error, depth = 0; current && depth < 5; depth += 1) {
+    if ((current as NodeJS.ErrnoException).code === "ESSRFBLOCKED") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 // ─── Guarded Fetch ─────────────────────────────────────────────────────────────
 
 export const MAX_REDIRECTS = 3;
 
 export type SafeFetchResult =
-  | { ok: true; response: Response; finalUrl: string }
+  | { ok: true; response: Response; finalUrl: string; dispose: () => void }
   | { ok: false; reason: UrlRejection };
 
 /**
- * fetch() with every redirect hop validated before it is followed.
+ * fetch() with every redirect hop validated before it is followed, and every
+ * connection pinned to an address validated at connect time.
  *
  * `redirect: "follow"` cannot work here: by the time the final URL is available
  * the internal request has already been issued, which is exactly the side effect
  * an SSRF guard exists to prevent.
+ *
+ * Agent lifecycle: one Agent per safeFetch call, shared by its redirect hops and
+ * released by the caller through `dispose` once the body has been read. The body
+ * is streamed after safeFetch returns, so closing here would cut it off, and a
+ * keepAliveTimeout trick would leave idle sockets to a per-call pool for no gain.
+ * On every non-ok path safeFetch disposes the Agent itself.
  */
 export async function safeFetch(
   rawUrl: string,
   init: RequestInit & { signal?: AbortSignal },
-  options: { resolver?: HostResolver; maxRedirects?: number } = {},
+  options: { resolver?: HostResolver; maxRedirects?: number; fetchImpl?: typeof fetch } = {},
 ): Promise<SafeFetchResult> {
-  const { resolver = resolveHostAddresses, maxRedirects = MAX_REDIRECTS } = options;
-  let currentUrl = rawUrl;
+  const {
+    resolver = resolveHostAddresses,
+    maxRedirects = MAX_REDIRECTS,
+    fetchImpl = undiciFetch as unknown as typeof fetch,
+  } = options;
 
-  for (let hop = 0; hop <= maxRedirects; hop += 1) {
-    const check = await checkUrlWithDns(currentUrl, resolver);
-    if (!check.ok) return check;
+  const agent = new Agent({ connect: { lookup: createValidatingLookup(resolver) } });
+  const dispose = () => {
+    void agent.destroy().catch(() => undefined);
+  };
 
-    const response = await fetch(check.url.toString(), { ...init, redirect: "manual" });
+  try {
+    let currentUrl = rawUrl;
 
-    if (!isRedirect(response.status)) {
-      return { ok: true, response, finalUrl: check.url.toString() };
+    for (let hop = 0; hop <= maxRedirects; hop += 1) {
+      const check = await checkUrlWithDns(currentUrl, resolver);
+      if (!check.ok) {
+        dispose();
+        return check;
+      }
+
+      let response: Response;
+
+      try {
+        response = await fetchImpl(check.url.toString(), {
+          ...init,
+          redirect: "manual",
+          dispatcher: agent,
+        } as RequestInit);
+      } catch (error) {
+        // The lookup refused a rebound or otherwise non-public answer.
+        if (isBlockedByLookup(error)) {
+          dispose();
+          return { ok: false, reason: "private_address" };
+        }
+        throw error;
+      }
+
+      const location = response.headers.get("location");
+
+      if (!isRedirect(response.status) || !location) {
+        return { ok: true, response, finalUrl: check.url.toString(), dispose };
+      }
+
+      // Release the redirect body before moving on.
+      await response.body?.cancel().catch(() => undefined);
+      currentUrl = new URL(location, check.url).toString();
     }
 
-    const location = response.headers.get("location");
-    if (!location) {
-      return { ok: true, response, finalUrl: check.url.toString() };
-    }
-
-    // Release the redirect body before moving on.
-    await response.body?.cancel().catch(() => undefined);
-    currentUrl = new URL(location, check.url).toString();
+    dispose();
+    return { ok: false, reason: "too_many_redirects" };
+  } catch (error) {
+    dispose();
+    throw error;
   }
-
-  return { ok: false, reason: "too_many_redirects" };
 }
 
 function isRedirect(status: number): boolean {
