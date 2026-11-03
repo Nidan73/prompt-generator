@@ -20,6 +20,8 @@ const SECTION_LABEL = /^[A-Z][\w ()/&-]{1,40}:/gm;
 const IMAGE_JUNK = /unreal engine|octane|\b8k\b|--ar\b/i;
 // An Assumptions section alone does not count: a vague request needs an ask-first instruction.
 const VAGUE_OK = /\bask (the user|me)\b|\bfirst ask\b|\bstart by asking\b|\bbefore (you )?(start|begin|continu)/i;
+const PINNED_VERSION =
+  /\b(next\.?js|react|node(?:\.js)?|typescript|python|vue|angular|svelte|django|laravel|tailwind(?:\s*css)?|express|nestjs|php|java)\s*v?\d+(?:\.\d+)*\+?/i;
 const LEAK_MARKERS = [
   "Bhai Thik Kor",
   "HOW TO ROUTE",
@@ -88,6 +90,13 @@ export function checkGenerateOutput(
     const labels = prompt.match(SECTION_LABEL)?.length ?? 0;
     if (!prompt.includes("\n\n") || labels < 3) {
       issues.push(`sections: needs blank lines and 3+ "Label:" lines, found ${labels}`);
+    }
+  }
+
+  if (kind !== "image" && kind !== "inject") {
+    const pinned = prompt.match(PINNED_VERSION);
+    if (pinned) {
+      issues.push(`versions: pins a stack version ("${pinned[0]}"); ask for the latest stable version instead`);
     }
   }
 

@@ -181,4 +181,29 @@ describe("live eval file", () => {
     expect(src).toMatch(/try\s*\{\s*res = await POST/);
     expect(src).not.toMatch(/issues = checkGenerateOutput\(json, kind\);\s*\}\s*catch/);
   });
+
+  describe("pinned versions", () => {
+    const versions = (out: ReturnType<typeof make>, kind: Parameters<typeof checkGenerateOutput>[1]) =>
+      checkGenerateOutput(out, kind).filter((i) => i.startsWith("versions:"));
+
+    for (const pin of ["Next.js 14", "React 18", "Node 18+", "Python 3.10"]) {
+      it(`flags ${pin}`, () => {
+        const issues = versions(make(`${BODY}\n\nContext: build it with ${pin}.`), "code");
+        expect(issues).toHaveLength(1);
+        expect(issues[0]).toContain(pin);
+      });
+    }
+
+    it("accepts a latest-stable instruction", () => {
+      const out = make(`${BODY}\n\nContext: Use the latest stable version of Next.js and React.`);
+      expect(versions(out, "code")).toEqual([]);
+    });
+
+    it("exempts image outputs", () => {
+      const prompt =
+        "Create an image: A developer at a desk with a laptop showing React 18 code, warm lamp light, shallow depth of field, cinematic composition, calm evening mood, wide 16:9 frame, soft film grain, detailed keyboard and coffee cup in the foreground, window with city lights behind.";
+      const out = make(prompt, { open_source: "huggingface", freemium: "gemini", premium: "chatgpt" });
+      expect(versions(out, "image")).toEqual([]);
+    });
+  });
 });

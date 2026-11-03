@@ -24,7 +24,20 @@ describe("buildGenerateSystemPrompt", () => {
         "\n\n[CHECK BEFORE ANSWERING]\n" +
         '- optimized_prompt: "Label:" sections with an empty line (\\n\\n) between them; image prompts are one paragraph starting with "Create an image:".\n' +
         "- No invented facts and no fill-in slots.\n" +
-        '- model_name copied from the lists above without "(open-weight)"; each platform_id serves its tier.',
+        '- model_name copied from the lists above without "(open-weight)"; each platform_id serves its tier.\n' +
+        "- No version numbers for frameworks, languages or libraries unless the user gave one; ask for the latest stable version instead.",
+    );
+  });
+
+  it("has a versions rule that forbids pinning stack versions", () => {
+    expect(GENERATE_BASE_PROMPT).toContain(
+      '\n\n9. Versions: never write version numbers for frameworks, languages, runtimes or libraries (for example "Next.js 14", "React 18", "Node 18+" or "Python 3.10"); your knowledge of current versions may be out of date. Name the technology and tell the AI to use its latest stable version and that version\'s current conventions and APIs. Keep a specific version only when the user asked for it.',
+    );
+  });
+
+  it("repeats the versions rule in the check block", () => {
+    expect(out).toContain(
+      "- No version numbers for frameworks, languages or libraries unless the user gave one; ask for the latest stable version instead.",
     );
   });
 
