@@ -109,3 +109,12 @@ describe("classifyError status codes", () => {
     expect(classifyError(Object.assign(new Error("timeout"), { statusCode: 500 }))).toBe("timeout");
   });
 });
+
+describe("classifyError invalid output", () => {
+  it("labels unusable clarify output", async () => {
+    const { InvalidOutputError } = await import("../../lib/clarify-questions");
+    expect(classifyError(new InvalidOutputError("Provider returned fewer than 3 usable questions."))).toBe(
+      "invalid_output",
+    );
+  });
+});

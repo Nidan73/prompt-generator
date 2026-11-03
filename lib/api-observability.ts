@@ -1,5 +1,6 @@
 import { after, type NextRequest } from "next/server";
 import { Redis } from "@upstash/redis";
+import { InvalidOutputError } from "./clarify-questions";
 import { parseIpv6 } from "./ip-address";
 
 type RateLimitResult = {
@@ -81,6 +82,8 @@ function numericStatusCode(error: unknown): number | undefined {
 }
 
 export function classifyError(error: unknown): string {
+  if (error instanceof InvalidOutputError) return "invalid_output";
+
   const statusCode = numericStatusCode(error);
   if (statusCode === 429) return "provider_rate_limit";
   if (statusCode === 401 || statusCode === 403) return "auth";

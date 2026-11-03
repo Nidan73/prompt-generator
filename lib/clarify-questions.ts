@@ -2,6 +2,14 @@ export type RawClarifyQuestions = {
   questions: Array<{ question: string; options: string[] }>;
 };
 
+/** A provider answered, but not with anything usable; distinct from a transport failure. */
+export class InvalidOutputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidOutputError";
+  }
+}
+
 const MAX_OPTIONS = 4;
 const MAX_QUESTIONS = 3;
 

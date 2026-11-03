@@ -17,7 +17,7 @@ import {
   recordProviderSuccess,
 } from "@/lib/provider-pool";
 import { CLARIFY_SYSTEM_PROMPT } from "@/lib/prompts/clarify-system-prompt";
-import { normalizeClarifyQuestions } from "@/lib/clarify-questions";
+import { InvalidOutputError, normalizeClarifyQuestions } from "@/lib/clarify-questions";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
         const normalized = normalizeClarifyQuestions(result.object);
         // An unusable answer counts as a provider failure so the next one is tried.
-        if (!normalized) throw new Error("Provider returned fewer than 3 usable questions.");
+        if (!normalized) throw new InvalidOutputError("Provider returned fewer than 3 usable questions.");
 
         recordProviderSuccess("clarify", provider.name, Date.now() - providerStartedAt);
         trackApiEvent({

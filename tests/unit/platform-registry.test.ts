@@ -42,6 +42,16 @@ describe("resolveRecommendations", () => {
     expect(r.premium.platform_url).toBe("https://claude.ai");
   });
 
+  it("strips the open-weight marker from model names", () => {
+    const r = resolveRecommendations({
+      open_source: pick("deepseek", "DeepSeek V4 (open-weight)"),
+      freemium: pick("gemini", "Gemini 3 (Open-Weight) "),
+      premium: pick("claude", "Claude Opus"),
+    });
+    expect(r.open_source.model_name).toBe("DeepSeek V4");
+    expect(r.freemium.model_name).toBe("Gemini 3");
+  });
+
   it("falls back when the platform is invalid for the tier", () => {
     const r = resolveRecommendations({
       open_source: pick("claude", "Claude Opus"),

@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 export const GenerateSchemaObject = z.object({
-  optimized_prompt: z.string().describe("Optimized expert prompt"),
+  optimized_prompt: z.string().describe('Plain-text prompt. "Label:" sections separated by an empty line (\\n\\n); image prompts are a single paragraph.'),
   routing: z.object({
     open_source: z.object({
       platform_id: z.string(),

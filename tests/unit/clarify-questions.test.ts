@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeClarifyQuestions } from "../../lib/clarify-questions";
+import { InvalidOutputError, normalizeClarifyQuestions } from "../../lib/clarify-questions";
 
 const q = (question: string, options: string[]) => ({ question, options });
 const valid = (n: number) => q(`Question ${n}?`, [`A${n}`, `B${n}`, `C${n}`]);
@@ -62,5 +62,14 @@ describe("normalizeClarifyQuestions", () => {
 
   it("returns null when only 2 are valid", () => {
     expect(normalizeClarifyQuestions({ questions: [valid(1), valid(2)] })).toBeNull();
+  });
+});
+
+describe("InvalidOutputError", () => {
+  it("is an Error with its own name", () => {
+    const e = new InvalidOutputError("bad");
+    expect(e).toBeInstanceOf(Error);
+    expect(e.name).toBe("InvalidOutputError");
+    expect(e.message).toBe("bad");
   });
 });

@@ -112,7 +112,8 @@ export function resolveRecommendations(
 
     if (platform && isPlatformValidForTier && pick.model_name?.trim()) {
       result[tier] = {
-        model_name: pick.model_name.trim(),
+        // The prompt marks open-weight models in its lists; the marker is not part of the name.
+        model_name: pick.model_name.replace(/\s*\(open-weight\)\s*$/i, "").trim(),
         platform_url: platform.url,
         reasoning: pick.reasoning?.trim() || "Recommended for this task.",
       };
