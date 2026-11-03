@@ -1,127 +1,83 @@
-# Bhai Thik Kor (Real-Time AI Dispatcher)
+# Bhai Thik Kor
 
-Live : [https://bhaithikkor.vercel.app/](https://bhaithikkor.vercel.app/)
+Live: https://bhaithikkor.vercel.app/
 
-**Turn a vague idea into an expert-grade AI prompt with zero-latency streaming and elite model routing.**
+Bhai Thik Kor turns a rough idea into a structured prompt and recommends a model for three tiers (open source, freemium, premium). Input can be English, Bangla or romanized Bangla; the prompt comes back in English.
 
-![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)
-![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
-![Vercel AI SDK](https://img.shields.io/badge/Vercel_AI_SDK-Streaming-blue)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38BDF8?logo=tailwindcss&logoColor=white)
+## Features
 
-Bhai Thik Kor is a high-performance prompt engineering workspace designed for the "Zero Latency" era. It transforms low-effort user input into structured, professional prompts using real-time JSON streaming and elastic provider pools across Groq, Gemini, and OpenRouter.
+- Streaming generation: `/api/generate` streams a structured JSON result with `streamObject` from the Vercel AI SDK, and the page renders it as it arrives.
+- Guide Me: `/api/clarify` asks three multiple-choice questions to fill gaps before generating.
+- Tweak It: `/api/refine` streams an edited version of the prompt with `streamText`.
+- URL context: paste a link and `/api/extract` reads the page through Jina Reader. Private and internal addresses are rejected (`lib/url-safety.ts`).
+- Share and history: share links compress the prompt into the URL with lz-string; the last 10 prompts are kept in localStorage.
+- Admin page (`/admin`): password login with a signed cookie, daily usage counters, provider ping and cooldown reset.
 
----
+## How requests are routed
 
-## 🚀 High-Performance Architecture
+`lib/provider-pool.ts` spreads requests across Groq, Gemini and OpenRouter models with a round-robin counter. A model that fails twice is cooled down for two minutes, and cooldowns are shared between instances through Upstash Redis. The generate pool only uses models that support structured JSON output.
 
-### 1. Zero-Latency Streaming (`useObject` & `useCompletion`)
+`lib/openrouter-free.ts` fetches the current list of free OpenRouter models and falls back to a known list if the catalogue is unreachable.
 
-The application has been fully migrated to the **Vercel AI SDK**.
+`lib/stream-guard.ts` waits for the first token before sending the response, so a provider that fails early can still fall over to the next one.
 
-- **Real-Time JSON:** The `/api/generate` route uses `streamObject` to stream structured JSON token-by-token. The UI renders the "Optimized Prompt" and "Model Recommendations" as they are being typed by the AI.
-- **Fluid Refinement:** The `/api/refine` route uses `streamText` for instant "Tweak It" responses, providing a smooth, typewriter-like experience.
+## Limits
 
-### 2. Multiplexed Provider Pool (The "Free-Tier Cloud")
+| Route | Limit |
+|---|---|
+| `/api/generate` | 50 per user per day |
+| `/api/clarify` | 3 per minute |
+| `/api/refine` | 5 per minute |
+| `/api/extract` | 5 per minute |
 
-To overcome the strict rate limits of free AI APIs, we built a **Round-Robin Load Balancer** (`lib/provider-pool.ts`).
+Prompts are capped at 4,000 characters (`lib/api-schemas.ts`). If the Upstash variables are missing, requests are allowed and logged as unmetered. All API routes run on the Node.js runtime.
 
-- **Task-Specific Pools:** Clarification and refinement use broad speed-first pools; generation is constrained to models/endpoints that support strict structured JSON output.
-- **Live-Smoke Verified Generation:** The generation pool currently includes Groq GPT-OSS structured-output models plus Gemini/OpenRouter structured-output fallbacks.
-- **Fail-Fast Resilience:** If a provider returns a `429 (Rate Limit)` or `500` error, the backend instantly (within 50ms) cascades to the next model in the pool.
-- **Provider Health Cooldown:** Repeated provider failures temporarily cool that provider down inside the active runtime so traffic does not keep hitting a known-bad endpoint first.
-- **Capacity:** Adding more provider keys increases available free-tier capacity without changing application code.
+## Stack
 
-### 3. Live Model-Aware Routing
+Next.js 16, React 19, TypeScript, Tailwind CSS 4, Vercel AI SDK 6, Upstash Redis and Ratelimit, Zod 4, Framer Motion, Vitest, Playwright.
 
-The routing layer combines a verified platform registry with a cached OpenRouter model landscape.
+## Run locally
 
-- **Verified URLs:** The LLM returns `platform_id` values, and the client resolves them against local platform URLs.
-- **Fresh Recommendations:** `/api/generate` injects the current model landscape so routing can prefer newer suitable models instead of stale hardcoded picks.
-- **Low-Latency Cache:** The landscape uses a short in-memory cache plus Vercel/Next fetch caching to avoid calling OpenRouter on every generation request.
-- **Safe Fallbacks:** If live model data is unavailable, the app falls back to a static model landscape.
+Create `.env.local`:
 
----
-
-## 🏛️ Core Workflow
-
-### 1. URL Context Extraction
-
-Paste a URL (e.g., a documentation page or a GitHub repo) and the system automatically grounds the AI in that content using **Jina Reader** and aggressive HTML stripping.
-
-### 2. Intelligent Guided Mode
-
-Don't know what's missing? Click "Guide Me". The AI dynamically deduces your task's domain (Code, Video, Image, etc.) and generates 3 high-impact multiple-choice questions to fill the gaps.
-
-### 3. Switchboard Prompt Logic
-
-The engine detects your intent and selects the perfect framework:
-
-- **Code:** XML-tagged structured reasoning.
-- **Marketing:** AIDA / PAS frameworks.
-- **Creative:** Premise/Tone/Style matrices.
-- **General:** The elite RTCFC (Role, Task, Context, Format, Constraints) framework.
-
-### 4. Tweak, Share, and Reuse
-
-Generated prompts can be refined with the streaming "Tweak It" editor, copied as chat/API-ready output, shared through compressed URL hashes, and restored from local browser history.
-
----
-
-## 🛡️ Reliability & Security
-
-- **Upstash Redis Rate Limiting:** Enforces a sliding-window limit (50 generations per user per day) to prevent API abuse.
-- **Input Defense:** Generation inputs are capped at 4,000 characters, clarification payloads are bounded, and refinement inputs are capped separately to protect quotas.
-- **Safe URL Extraction:** URL reads block private/internal hosts, enforce fetch timeouts, reject oversized responses, and only process text-like content.
-- **Production Telemetry:** API routes emit structured logs and daily Upstash counters for route events, statuses, fallback pressure, provider usage, and safe input-size totals without logging full prompts.
-- **Health Endpoint:** `/api/health` returns a sanitized public readiness summary only; it does not expose provider names, key presence, model inventory, or cache internals.
-- **CI Smoke Checks:** GitHub Actions run lint, build, and mocked Playwright E2E on pushes and pull requests.
-- **Vercel Edge Runtime:** All API routes run on the Edge for global low-latency and zero cold starts.
-
----
-
-## 🛠️ Developer Setup
-
-### Environment Variables
-
-Create a `.env.local` file with the following keys. You only need one LLM key to start; adding more enables the load balancer.
-
-```env
-# Required: Rate Limiting
-UPSTASH_REDIS_REST_URL="https://..."
-UPSTASH_REDIS_REST_TOKEN="..."
-
-# LLM Providers (Add any to enable them in the pool)
-GROQ_API_KEY="gsk_..."
-GEMINI_API_KEY="AIza..."
-OPENROUTER_API_KEY="sk-or-v1-..."
+```
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+GROQ_API_KEY=
+GEMINI_API_KEY=
+OPENROUTER_API_KEY=
+ADMIN_PASSWORD=
 ```
 
-### Installation
+One provider key is enough to start; each extra key adds models to the pool. `ADMIN_PASSWORD` is only needed for the `/admin` page.
 
 ```bash
 npm install
 npm run dev
 ```
 
-### Verification
+## Scripts
 
-```bash
-npm run lint
-npm run build
-npm run test:e2e
+- `npm run dev`: start the dev server
+- `npm run build`: production build
+- `npm run start`: serve the production build
+- `npm run lint`: ESLint
+- `npm run typecheck`: TypeScript check
+- `npm test`: Vitest unit tests
+- `npm run test:e2e`: Playwright tests with mocked API routes
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, unit tests, build and the Playwright tests on every push to main and every pull request.
+
+## Project structure
+
+```
+app/            pages (home, admin, privacy) and API routes
+app/api/        generate, clarify, refine, extract, health, admin
+lib/            provider pool, rate limit, schemas, URL safety, stream guard, share links, history
+tests/unit/     Vitest tests
+tests/e2e/      Playwright tests
 ```
 
-Operational counters are stored in Upstash Redis with daily keys like `btq:metrics:YYYY-MM-DD:<route>:...` and a 14-day TTL.
+## Browser extension
 
----
-
-## 🗺️ Roadmap
-
-- [x] **Streaming UI:** Full migration to Vercel AI SDK for real-time feedback.
-- [x] **Provider Multiplexing:** Round-Robin load balancing with task-specific provider pools.
-- [x] **Live Model Routing:** Cached model landscape plus verified platform resolution.
-- [x] **Local History & Sharing:** Browser-local prompt history and compressed share links.
-- [ ] **Multi-Modal Support:** Visual prompting for GPT-4o-vision/Gemini Pro Vision.
-- [ ] **Advanced Prompt Versioning:** Diffing between "Version A" and "Version B" of an optimized prompt.
-- [ ] **Community Hub:** Share optimized prompts to a public gallery.
+A Chrome extension that uses this API lives at https://github.com/Nidan73/bhai-thik-kor-extension.
