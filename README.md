@@ -23,6 +23,14 @@ The pinned pools are Groq GPT-OSS 120B and 20B plus the current Gemini Flash and
 
 `lib/stream-guard.ts` waits for the first token before sending the response, so a provider that fails early can still fall over to the next one.
 
+## How prompts are generated
+
+The system prompt (`lib/prompts/generate-system-prompt.ts`) picks a structure per task type, keeps sections readable and sizes the length to the task. It does not invent facts: anything the user did not say goes under an "Assumptions:" section, and if one key fact is missing the prompt asks for it. The deliverable language rules and the three routing tiers are defined in the prompt, and image prompts are written in plain language. Guide Me questions come from `lib/prompts/clarify-system-prompt.ts` and are normalized to exactly three in `lib/clarify-questions.ts`.
+
+Model recommendations use live data. The OpenRouter catalogue supplies model names, with an "(open-weight)" marker taken from `hugging_face_id` and a separate `[IMAGE MODELS]` block for image-output models. The platform registry also flags which platforms can generate images. The last good catalogue is kept in Redis under `btq:model-landscape:last-good` and is used before the static fallback text.
+
+Provider order: Groq and Gemini pools first, OpenRouter free models only as a fallback after them, and free models under 8B parameters are never used. Groq and Gemini pool entries missing from the provider's live model list are dropped in the background, so a retired model stops being tried.
+
 ## Limits
 
 | Route | Per minute | Per day |
@@ -80,6 +88,7 @@ npm run dev
 - `npm run typecheck`: TypeScript check
 - `npm test`: Vitest unit tests
 - `npm run test:live`: check that every pinned Groq and Gemini model still exists (needs provider keys; runs weekly in CI)
+- `npm run test:eval`: generate real prompts for a set of ideas and score them against the quality checks (needs `GROQ_API_KEY` and/or `GEMINI_API_KEY`; writes `/tmp/prompt-eval-report.md`; blanks the Upstash variables so it never touches Redis)
 - `npm run test:e2e`: Playwright tests with mocked API routes
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, unit tests, build and the Playwright tests on every push to main and every pull request.
