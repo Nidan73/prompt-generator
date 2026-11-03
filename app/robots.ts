@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: "/api/", // Don't let Google index the API routes directly
+      disallow: ["/api/", "/admin"], // keep API routes and the admin UI out of search
     },
     sitemap: "https://bhaithikkor.vercel.app/sitemap.xml",
   };

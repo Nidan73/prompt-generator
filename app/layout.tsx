@@ -36,14 +36,6 @@ export const metadata: Metadata = {
     description:
       "Transform your rough ideas into expert-grade execution prompts and route them to the best AI models instantly.",
     siteName: "Bhai Thik Kor",
-    images: [
-      {
-        url: "https://bhaithikkor.vercel.app/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: "Bhai Thik Kor - Expert AI Prompt Generator",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
@@ -51,13 +43,9 @@ export const metadata: Metadata = {
     description:
       "Transform your rough ideas into expert-grade execution prompts and route them to the best AI models instantly.",
     creator: "@nidan",
-    images: ["https://bhaithikkor.vercel.app/og-image.png"],
   },
   verification: {
     google: "lLRBx1KGPwcBNd7zAVE-pRxgbuUtpWl0pSyuRwi4Scg",
-  },
-  icons: {
-    icon: "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍉</text></svg>",
   },
   metadataBase: new URL("https://bhaithikkor.vercel.app"),
 };
@@ -83,6 +71,25 @@ const themeInitScript = `
 })();
 `;
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Bhai Thik Kor",
+  "url": "https://bhaithikkor.vercel.app",
+  "applicationCategory": "UtilityApplication",
+  "operatingSystem": "All",
+  "description": "Expert AI Prompt Generator that transforms vague ideas into highly structured, expert-grade execution prompts and routes them to the best AI models.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "creator": {
+    "@type": "Person",
+    "name": "Nidan"
+  }
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -91,28 +98,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`} suppressHydrationWarning>
-        <Script
-          id="schema-org"
+        <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "WebApplication",
-              "name": "Bhai Thik Kor",
-              "url": "https://bhaithikkor.vercel.app",
-              "applicationCategory": "UtilityApplication",
-              "operatingSystem": "All",
-              "description": "Expert AI Prompt Generator that transforms vague ideas into highly structured, expert-grade execution prompts and routes them to the best AI models.",
-              "offers": {
-                "@type": "Offer",
-                "price": "0",
-                "priceCurrency": "USD"
-              },
-              "creator": {
-                "@type": "Person",
-                "name": "Nidan"
-              }
-            })
+            __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
           }}
         />
         <Script
