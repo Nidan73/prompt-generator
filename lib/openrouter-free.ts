@@ -41,6 +41,9 @@ const FETCH_TIMEOUT_MS = 3000;
 /** Keep the chain short; these are the tail of the rotation, not the front. */
 const MAX_MODELS_PER_POOL = 4;
 
+/** Tiny models answer real requests badly; below this they are not worth the hop. */
+export const MIN_FREE_MODEL_PARAMS_B = 8;
+
 /** Model families that are not general-purpose chat. */
 const NOISE_PATTERNS = [
   "content-safety",
@@ -61,7 +64,6 @@ const NOISE_PATTERNS = [
 export const FALLBACK_FREE_MODELS: FreeModel[] = [
   { id: "dots-studio/dots-3-note-preview:free", contextLength: 512000, structured: true },
   { id: "xingchen-agi/xing4.0-29b-a4b:free", contextLength: 262144, structured: true },
-  { id: "liquid/lfm-2.5-2.6b:free", contextLength: 65536, structured: true },
   { id: "google/gemma-4-26b-a4b-it:free", contextLength: 262144, structured: false },
   { id: "google/gemma-4-31b-it:free", contextLength: 262144, structured: false },
 ];
@@ -91,6 +93,18 @@ export function isUsableFreeModel(model: OpenRouterCatalogueModel): boolean {
   return inputs.includes("text") && outputs.includes("text");
 }
 
+/** Parameter count in billions from the model slug, or null when it has none. */
+function parseParamsB(id: string): number | null {
+  const slug = id.slice(id.lastIndexOf("/") + 1);
+  const match = /(\d+(?:\.\d+)?)b(?![a-z0-9])/i.exec(slug);
+  return match ? Number(match[1]) : null;
+}
+
+function meetsMinimumSize(id: string): boolean {
+  const size = parseParamsB(id);
+  return size === null || size >= MIN_FREE_MODEL_PARAMS_B;
+}
+
 export function supportsStructuredOutput(model: OpenRouterCatalogueModel): boolean {
   return (model.supported_parameters ?? []).includes("structured_outputs");
 }
@@ -107,6 +121,7 @@ export function selectFreeModels(
 
   return models
     .filter(isUsableFreeModel)
+    .filter((model) => meetsMinimumSize(model.id as string))
     .filter((model) => !options.structured || supportsStructuredOutput(model))
     .map((model) => ({
       id: model.id as string,

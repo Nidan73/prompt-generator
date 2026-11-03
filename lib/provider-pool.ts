@@ -3,6 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { Redis } from "@upstash/redis";
 import type { LanguageModel } from "ai";
 import { getFreeModels, peekFreeModels } from "./openrouter-free";
+import { peekAvailableModelIds } from "./provider-availability";
 
 /**
  * Provider Pool: Round-Robin Load Balancer (AI SDK Streaming Version)
@@ -76,6 +77,13 @@ function getPoolRedis(): Redis | null {
   }
 
   return poolRedis;
+}
+
+/** True only when the provider's live list is known and omits this model. */
+function isRetired(entry: ProviderConfig): boolean {
+  if (entry.provider === "openrouter") return false;
+  const live = peekAvailableModelIds(entry.provider);
+  return live !== null && !live.has(entry.modelId);
 }
 
 function healthKey(poolName: string, providerName: string): string {
@@ -244,7 +252,11 @@ export function getPoolRuntimeStatus(poolName: string, pool: ProviderConfig[]) {
 
     return {
       name: provider.name,
-      status: coolingDownForMs > 0 ? "cooling_down" : "ready",
+      status: isRetired(provider)
+        ? "unavailable"
+        : coolingDownForMs > 0
+          ? "cooling_down"
+          : "ready",
       failures: health.failures,
       coolingDownForMs,
       lastLatencyMs: health.lastLatencyMs,
@@ -398,13 +410,26 @@ export async function getChain(
 ): Promise<ProviderConfig[]> {
   await syncSharedCooldowns();
 
-  // Only pay for discovery when the static pool cannot serve this request.
-  const staticallyReady = pool.some(
-    (provider) => provider.hasKey && !isCoolingDown(poolName, provider.name),
-  );
-  const discovered = await getOpenRouterFreeProviders(options.structured, !staticallyReady);
+  // Retired models are dropped; an unknown live list keeps the entry.
+  const configured = pool.filter((provider) => provider.hasKey && !isRetired(provider));
+  const healthyStatic = configured.filter((provider) => !isCoolingDown(poolName, provider.name));
 
-  return getRotatedChain(poolName, [...pool, ...discovered]);
+  // Only pay for discovery when the static pool cannot serve this request.
+  const discovered = await getOpenRouterFreeProviders(options.structured, healthyStatic.length === 0);
+  const healthyDiscovered = discovered.filter((provider) => !isCoolingDown(poolName, provider.name));
+
+  // Free models are a safety net: never rotated in front of a healthy static entry.
+  if (healthyStatic.length > 0) {
+    return [...getRotatedChain(poolName, healthyStatic), ...healthyDiscovered];
+  }
+
+  // Nothing static is healthy: discovered first, then every static entry as a last resort.
+  if (healthyDiscovered.length > 0) {
+    return [...healthyDiscovered, ...getRotatedChain(poolName, configured)];
+  }
+
+  // Nothing healthy at all: try everything configured rather than fail outright.
+  return [...getRotatedChain(poolName, configured), ...discovered];
 }
 
 export function getRotatedChain(poolName: string, pool: ProviderConfig[]): ProviderConfig[] {

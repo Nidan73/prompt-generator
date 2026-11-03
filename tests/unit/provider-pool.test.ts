@@ -202,3 +202,101 @@ describe("shared cooldown status and reset", () => {
     expect(broken.getPoolRuntimeStatus("p", pool).coolingDown).toBe(0);
   });
 });
+
+describe("getChain ordering and availability", () => {
+  const catalogue = [{ id: "or/x:free" }, { id: "or/y:free" }];
+
+  function entry(name: string, provider: ProviderConfig["provider"] = "groq"): ProviderConfig {
+    return {
+      name,
+      sdkModel: null as unknown as ProviderConfig["sdkModel"],
+      hasKey: true,
+      provider,
+      modelId: name,
+    };
+  }
+
+  async function setup() {
+    vi.resetModules();
+    vi.stubEnv("OPENROUTER_API_KEY", "or-key");
+    vi.stubEnv("GROQ_API_KEY", "g-key");
+    vi.doMock("../../lib/openrouter-free", () => ({
+      peekFreeModels: () => catalogue,
+      getFreeModels: async () => catalogue,
+    }));
+    const pool = await import("../../lib/provider-pool");
+    const availability = await import("../../lib/provider-availability");
+    return { pool, availability };
+  }
+
+  beforeEach(() => {
+    fake.hashes.clear();
+    fake.values.clear();
+    fake.broken = false;
+    vi.unstubAllEnvs();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  it("always starts with a static entry and ends with the discovered ones", async () => {
+    const { pool, availability } = await setup();
+    availability.setAvailabilityFetch((async () => new Response("{}", { status: 500 })) as unknown as typeof fetch);
+    const statics = [entry("A"), entry("B"), entry("C")];
+
+    for (let i = 0; i < 8; i += 1) {
+      const names = (await pool.getChain("ord", statics, { structured: false })).map((p) => p.name);
+      expect(["A", "B", "C"]).toContain(names[0]);
+      expect(names.slice(-2)).toEqual(["OR or/x:free", "OR or/y:free"]);
+      expect(names).toHaveLength(5);
+    }
+  });
+
+  it("puts discovered entries first only when every static entry is cooling down", async () => {
+    const { pool, availability } = await setup();
+    availability.setAvailabilityFetch((async () => new Response("{}", { status: 500 })) as unknown as typeof fetch);
+    const statics = [entry("A"), entry("B")];
+    for (const name of ["A", "B"]) {
+      pool.recordProviderFailure("cd", name);
+      pool.recordProviderFailure("cd", name);
+    }
+
+    const names = (await pool.getChain("cd", statics, { structured: false })).map((p) => p.name);
+
+    expect(names.slice(0, 2)).toEqual(["OR or/x:free", "OR or/y:free"]);
+    expect(new Set(names.slice(2))).toEqual(new Set(["A", "B"]));
+  });
+
+  it("drops an entry the provider no longer lists, and marks it unavailable", async () => {
+    const { pool, availability } = await setup();
+    availability.setAvailabilityFetch((async () =>
+      json200({ data: [{ id: "A" }, { id: "C" }] })) as unknown as typeof fetch);
+    const statics = [entry("A"), entry("B"), entry("C")];
+
+    await availability.refreshAvailableModels("groq");
+    const names = (await pool.getChain("av", statics, { structured: false })).map((p) => p.name);
+    const status = pool.getPoolRuntimeStatus("av", statics);
+
+    expect(names).not.toContain("B");
+    expect(names).toContain("A");
+    expect(status.providers.find((p) => p.name === "B")?.status).toBe("unavailable");
+    expect(status.ready).toBe(2);
+  });
+
+  it("excludes nothing when the live list could not be fetched", async () => {
+    const { pool, availability } = await setup();
+    availability.setAvailabilityFetch((async () => {
+      throw new Error("down");
+    }) as unknown as typeof fetch);
+    const statics = [entry("A"), entry("B")];
+
+    await availability.refreshAvailableModels("groq");
+    const names = (await pool.getChain("fail", statics, { structured: false })).map((p) => p.name);
+
+    expect(names).toContain("A");
+    expect(names).toContain("B");
+    expect(pool.getPoolRuntimeStatus("fail", statics).ready).toBe(2);
+  });
+});
+
+function json200(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200 });
+}

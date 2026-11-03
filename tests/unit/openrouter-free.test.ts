@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  FALLBACK_FREE_MODELS,
   isUsableFreeModel,
   selectFreeModels,
   supportsStructuredOutput,
@@ -94,5 +95,25 @@ describe("selectFreeModels", () => {
 
   it("returns nothing for an empty catalogue", () => {
     expect(selectFreeModels([], { structured: true })).toEqual([]);
+  });
+});
+
+describe("minimum model size", () => {
+  const ids = (list: OpenRouterCatalogueModel[]) => selectFreeModels(list, { structured: false }).map((m) => m.id);
+
+  it("drops tiny models but keeps larger and unsized ones", () => {
+    const result = ids([
+      model({ id: "liquid/lfm-2.5-2.6b:free" }),
+      model({ id: "xingchen-agi/xing4.0-29b-a4b:free" }),
+      model({ id: "dots-studio/dots-3-note-preview:free" }),
+    ]);
+
+    expect(result).not.toContain("liquid/lfm-2.5-2.6b:free");
+    expect(result).toContain("xingchen-agi/xing4.0-29b-a4b:free");
+    expect(result).toContain("dots-studio/dots-3-note-preview:free");
+  });
+
+  it("does not ship a fallback entry below the minimum", () => {
+    expect(FALLBACK_FREE_MODELS.map((m) => m.id)).not.toContain("liquid/lfm-2.5-2.6b:free");
   });
 });
