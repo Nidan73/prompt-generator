@@ -98,7 +98,9 @@ export default function AdminPage() {
   const [loadError, setLoadError] = useState(false);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // No synchronous setState here: the initial-load effect calls this directly.
+  // The initial-load effect defers this with setTimeout(0) rather than calling it
+  // directly: the react-hooks/set-state-in-effect rule traces into the called
+  // function, and this one sets state.
   const fetchUsageData = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/usage");

@@ -85,7 +85,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("Admin login error", describeError(error));
+    console.error(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        event: "route_failed",
+        route: "admin-login",
+        ...describeError(error),
+      }),
+    );
     return NextResponse.json({ error: "Authentication failed." }, { status: 500 });
   }
 }

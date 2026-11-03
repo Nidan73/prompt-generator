@@ -33,7 +33,7 @@ The pinned pools are Groq GPT-OSS 120B and 20B plus the current Gemini Flash and
 | `/api/extract` | 5 | 60 |
 | `/api/admin/login` | 5 per 15 minutes | none |
 
-Limits are per client. IPv4 clients are keyed by address and IPv6 clients by their /64 network, so rotating addresses inside one network does not reset the count. Requests rejected as invalid (bad body, over-long prompt, blocked URL) are not counted. Prompts are capped at 4,000 characters (`lib/api-schemas.ts`). If the Upstash variables are missing, the public API routes allow requests and log them as unmetered; admin login does the opposite and fails closed. All API routes run on the Node.js runtime.
+Limits are per client. IPv4 clients are keyed by address and IPv6 clients by their /64 network, so rotating addresses inside one network does not reset the count. Requests rejected as invalid (bad body, over-long prompt, a URL that fails the syntax-level checks) are not counted. URLs blocked only after DNS resolution are rejected after metering, so they do count. Prompts are capped at 4,000 characters (`lib/api-schemas.ts`). If the Upstash variables are missing, the public API routes allow requests and log them as unmetered; admin login does the opposite and fails closed. All API routes run on the Node.js runtime.
 
 ## Security
 

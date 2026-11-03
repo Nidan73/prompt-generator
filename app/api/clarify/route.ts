@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
           status: 499,
           durationMs: Date.now() - startedAt,
           fallbackCount,
-        });
+        }, { persist: false });
         return new Response(null, { status: 499 });
       }
 
@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
             status: 499,
             durationMs: Date.now() - startedAt,
             fallbackCount,
-          });
+          }, { persist: false });
           return new Response(null, { status: 499 });
         }
 

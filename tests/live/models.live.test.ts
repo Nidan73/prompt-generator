@@ -15,6 +15,21 @@ async function getJson(url: string, headers: Record<string, string> = {}) {
   return res.json();
 }
 
+// In CI a missing secret must fail loudly, otherwise the check silently passes.
+// Locally the provider suites simply skip.
+function requireSecretInCi(name: string) {
+  if (process.env.CI && !process.env[name]) {
+    throw new Error(`${name} secret is not configured for the model-check workflow`);
+  }
+}
+
+describe("Required secrets", () => {
+  it("are present in CI", () => {
+    requireSecretInCi("GROQ_API_KEY");
+    requireSecretInCi("GEMINI_API_KEY");
+  });
+});
+
 describe.skipIf(!process.env.GROQ_API_KEY)("Groq pinned models", () => {
   it("are all listed by Groq", async () => {
     const body = await getJson("https://api.groq.com/openai/v1/models", {

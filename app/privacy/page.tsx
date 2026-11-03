@@ -58,7 +58,7 @@ export default function PrivacyPage() {
           We use your IP address to enforce rate limits, with a separate daily limit for each
           feature (50 improvements per day, plus caps on guided questions, tweaks, and link
           reading). For IPv6 addresses we use the surrounding /64 network instead of the full
-          address. It is held only for the length of the limit window, at most one day, is not
+          address. It is held only for the length of the limit window, at most two days, is not
           stored alongside your prompt text, and is not used to build a profile.
         </p>
         <p>
@@ -89,7 +89,8 @@ export default function PrivacyPage() {
         <p>
           To improve a prompt we pass your text to one of our model providers (Groq, Google
           (Gemini), or OpenRouter) under their API terms. We send only your prompt text and any
-          clarifications you provided.
+          clarifications you provided. If you used page extraction, the text we pulled from the
+          page you linked is sent along with your prompt.
         </p>
       </Section>
 
@@ -104,7 +105,15 @@ export default function PrivacyPage() {
         <p>
           Only the address is shared for this, never your prompt text. We keep at most the first few
           thousand characters of the page, and only for as long as it takes to build your prompt. We
-          refuse addresses that point at private or internal networks.
+          refuse addresses that point at private or internal networks. Our server logs the
+          site&apos;s domain name for this feature, not the full address and not the page text.
+        </p>
+      </Section>
+
+      <Section title="Website analytics">
+        <p>
+          The website uses Vercel Web Analytics for anonymous page-view statistics. It is used to
+          see how many people visit, not to identify you or follow you across sites.
         </p>
       </Section>
 
