@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getRotatedChain, type ProviderConfig } from "../../lib/provider-pool";
+import {
+  getRotatedChain,
+  PINNED_POOLS,
+  type ProviderConfig,
+} from "../../lib/provider-pool";
 
 function poolOf(names: string[]): ProviderConfig[] {
   return names.map((name) => ({
@@ -7,8 +11,23 @@ function poolOf(names: string[]): ProviderConfig[] {
     // getRotatedChain only ever reads `name` and `hasKey`.
     sdkModel: null as unknown as ProviderConfig["sdkModel"],
     hasKey: true,
+    provider: "groq" as const,
+    modelId: name,
   }));
 }
+
+describe("pinned pools", () => {
+  for (const [poolName, pool] of Object.entries(PINNED_POOLS)) {
+    it(`${poolName} entries have a provider and modelId and unique names`, () => {
+      for (const entry of pool) {
+        expect(entry.provider).toBeTruthy();
+        expect(entry.modelId).toBeTruthy();
+      }
+      const names = pool.map((entry) => entry.name);
+      expect(new Set(names).size).toBe(names.length);
+    });
+  }
+});
 
 describe("getRotatedChain", () => {
   it("returns every configured provider exactly once", () => {

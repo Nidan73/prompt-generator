@@ -54,15 +54,15 @@ const NOISE_PATTERNS = [
 ];
 
 /**
- * Last known good, verified against the live catalogue on 2026-08-11. Used only
+ * Last known good, verified against the live catalogue on 2026-11-04. Used only
  * when the catalogue fetch fails, so a bad network moment does not silently
  * remove OpenRouter from the pools.
  */
-const FALLBACK_FREE_MODELS: FreeModel[] = [
-  { id: "openai/gpt-oss-20b:free", contextLength: 131072, structured: true },
-  { id: "nvidia/nemotron-3-super-120b-a12b:free", contextLength: 262144, structured: true },
-  { id: "google/gemma-4-26b-a4b-it:free", contextLength: 262144, structured: true },
-  { id: "nvidia/nemotron-nano-9b-v2:free", contextLength: 128000, structured: true },
+export const FALLBACK_FREE_MODELS: FreeModel[] = [
+  { id: "dots-studio/dots-3-note-preview:free", contextLength: 512000, structured: true },
+  { id: "xingchen-agi/xing4.0-29b-a4b:free", contextLength: 262144, structured: true },
+  { id: "liquid/lfm-2.5-2.6b:free", contextLength: 65536, structured: true },
+  { id: "google/gemma-4-26b-a4b-it:free", contextLength: 262144, structured: false },
   { id: "google/gemma-4-31b-it:free", contextLength: 262144, structured: false },
 ];
 

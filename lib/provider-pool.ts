@@ -28,6 +28,8 @@ export type ProviderConfig = {
   name: string;
   sdkModel: LanguageModel;
   hasKey: boolean;
+  provider: "groq" | "gemini" | "openrouter";
+  modelId: string;
 };
 
 type ProviderHealth = {
@@ -218,17 +220,25 @@ export function getPoolRuntimeStatus(poolName: string, pool: ProviderConfig[]) {
   };
 }
 
+// Built through helpers so provider, modelId, sdkModel and hasKey cannot drift
+// apart (the live model check reads provider and modelId).
+function groqModel(name: string, modelId: string): ProviderConfig {
+  return { name, provider: "groq", modelId, sdkModel: groq(modelId), hasKey: !!process.env.GROQ_API_KEY };
+}
+
+function geminiModel(name: string, modelId: string): ProviderConfig {
+  return { name, provider: "gemini", modelId, sdkModel: google(modelId), hasKey: !!process.env.GEMINI_API_KEY };
+}
+
 // ─── GENERATE Pool (needs smart models for complex JSON + switchboard output) ──
 
 export const GENERATE_POOL: ProviderConfig[] = [
-  // ── Groq (100k TPD each, ~800 tok/s — FASTEST provider) ──
   // Generate uses streamObject, so providers must support strict JSON schema.
-  { name: "Groq GPT-OSS 120B", sdkModel: groq("openai/gpt-oss-120b"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq GPT-OSS 20B", sdkModel: groq("openai/gpt-oss-20b"), hasKey: !!process.env.GROQ_API_KEY },
-  // ── Gemini (1500 RPD each — reliable high-quota backup) ──
-  { name: "Gemini 2.5 Flash", sdkModel: google("gemini-2.5-flash"), hasKey: !!process.env.GEMINI_API_KEY },
-  { name: "Gemini 2.5 Flash Lite", sdkModel: google("gemini-2.5-flash-lite"), hasKey: !!process.env.GEMINI_API_KEY },
-  { name: "Gemini 2.0 Flash", sdkModel: google("gemini-2.0-flash"), hasKey: !!process.env.GEMINI_API_KEY },
+  groqModel("Groq GPT-OSS 120B", "openai/gpt-oss-120b"),
+  groqModel("Groq GPT-OSS 20B", "openai/gpt-oss-20b"),
+  geminiModel("Gemini 3.6 Flash", "gemini-3.6-flash"),
+  geminiModel("Gemini 3.5 Flash Lite", "gemini-3.5-flash-lite"),
+  geminiModel("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
   // OpenRouter free models are appended at request time by getChain() — their
   // IDs change too often to pin here.
 ];
@@ -236,35 +246,32 @@ export const GENERATE_POOL: ProviderConfig[] = [
 // ─── CLARIFY Pool (lightweight, speed-first for guided questions) ──────────────
 
 export const CLARIFY_POOL: ProviderConfig[] = [
-  // ── Groq (blazing fast, 100k TPD each) ──
-  { name: "Groq Llama 3.1 8B", sdkModel: groq("llama-3.1-8b-instant"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq Llama 4 Scout", sdkModel: groq("meta-llama/llama-4-scout-17b-16e-instruct"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq Qwen3 32B", sdkModel: groq("qwen/qwen3-32b"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq GPT-OSS 20B", sdkModel: groq("openai/gpt-oss-20b"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq Mixtral 8x7B", sdkModel: groq("mixtral-8x7b-32768"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq Gemma 2 9B", sdkModel: groq("gemma2-9b-it"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq Llama 3 8B", sdkModel: groq("llama3-8b-8192"), hasKey: !!process.env.GROQ_API_KEY },
-  // ── Gemini (ultra-fast lite models, 1500 RPD each) ──
-  { name: "Gemini 2.5 Flash Lite", sdkModel: google("gemini-2.5-flash-lite"), hasKey: !!process.env.GEMINI_API_KEY },
-  { name: "Gemini 2.5 Flash", sdkModel: google("gemini-2.5-flash"), hasKey: !!process.env.GEMINI_API_KEY },
-  { name: "Gemini 2.0 Flash", sdkModel: google("gemini-2.0-flash"), hasKey: !!process.env.GEMINI_API_KEY },
+  groqModel("Groq GPT-OSS 20B", "openai/gpt-oss-20b"),
+  groqModel("Groq GPT-OSS 120B", "openai/gpt-oss-120b"),
+  geminiModel("Gemini 3.5 Flash Lite", "gemini-3.5-flash-lite"),
+  geminiModel("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
+  geminiModel("Gemini 2.5 Flash Lite", "gemini-2.5-flash-lite"),
   // OpenRouter free models are appended at request time by getChain().
 ];
 
-// ─── REFINE Pool (needs good instruction-following for structural edits) ───────
+// ─── REFINE Pool (plain text, needs good instruction-following) ────────────────
 
 export const REFINE_POOL: ProviderConfig[] = [
-  // ── Groq (fast + smart, 100k TPD each) ──
-  { name: "Groq Llama 3.3 70B", sdkModel: groq("llama-3.3-70b-versatile"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq Qwen3 32B", sdkModel: groq("qwen/qwen3-32b"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq GPT-OSS 120B", sdkModel: groq("openai/gpt-oss-120b"), hasKey: !!process.env.GROQ_API_KEY },
-  { name: "Groq Llama 3.1 8B", sdkModel: groq("llama-3.1-8b-instant"), hasKey: !!process.env.GROQ_API_KEY },
-  // ── Gemini (best instruction-following, 1500 RPD each) ──
-  { name: "Gemini 2.5 Flash", sdkModel: google("gemini-2.5-flash"), hasKey: !!process.env.GEMINI_API_KEY },
-  { name: "Gemini 2.5 Flash Lite", sdkModel: google("gemini-2.5-flash-lite"), hasKey: !!process.env.GEMINI_API_KEY },
-  { name: "Gemini 3.1 Pro", sdkModel: google("gemini-3.1-pro-preview"), hasKey: !!process.env.GEMINI_API_KEY },
+  groqModel("Groq GPT-OSS 120B", "openai/gpt-oss-120b"),
+  groqModel("Groq GPT-OSS 20B", "openai/gpt-oss-20b"),
+  geminiModel("Gemini 3.6 Flash", "gemini-3.6-flash"),
+  geminiModel("Gemini 3.5 Flash Lite", "gemini-3.5-flash-lite"),
+  geminiModel("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
+  geminiModel("Gemini 2.5 Flash Lite", "gemini-2.5-flash-lite"),
   // OpenRouter free models are appended at request time by getChain().
 ];
+
+/** Every statically pinned model, for the scheduled live availability check. */
+export const PINNED_POOLS = {
+  generate: GENERATE_POOL,
+  clarify: CLARIFY_POOL,
+  refine: REFINE_POOL,
+} as const;
 
 // ─── Round-Robin Counter ───────────────────────────────────────────────────────
 
@@ -304,6 +311,8 @@ function getNextIndex(poolName: string, poolSize: number): number {
 function toProviderConfigs(models: { id: string }[]): ProviderConfig[] {
   return models.map((model) => ({
     name: `OR ${model.id}`,
+    provider: "openrouter" as const,
+    modelId: model.id,
     sdkModel: openrouter(model.id),
     hasKey: true,
   }));
