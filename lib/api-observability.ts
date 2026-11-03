@@ -1,6 +1,6 @@
 import { after, type NextRequest } from "next/server";
 import { Redis } from "@upstash/redis";
-import { parseIpv6 } from "./url-safety";
+import { parseIpv6 } from "./ip-address";
 
 type RateLimitResult = {
   limit: number;
