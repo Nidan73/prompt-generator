@@ -13,6 +13,8 @@ export type Platform = {
   name: string;
   url: string;
   tiers: PlatformTier[];
+  /** Native image generation in the consumer chat UI (platform metadata, not model data). */
+  imageGeneration: boolean;
 };
 
 export type ResolvedRecommendation = {
@@ -24,18 +26,18 @@ export type ResolvedRecommendation = {
 // ─── Platform Registry ─────────────────────────────────────────────────────────
 
 export const PLATFORM_REGISTRY: Platform[] = [
-  { id: "chatgpt",     name: "ChatGPT",              url: "https://chatgpt.com",           tiers: ["freemium", "premium"] },
-  { id: "claude",      name: "Claude",                url: "https://claude.ai",             tiers: ["freemium", "premium"] },
-  { id: "copilot",     name: "Microsoft Copilot",     url: "https://copilot.microsoft.com", tiers: ["freemium"] },
-  { id: "deepseek",    name: "DeepSeek",              url: "https://chat.deepseek.com",     tiers: ["open_source", "freemium"] },
-  { id: "gemini",      name: "Google Gemini",         url: "https://gemini.google.com",     tiers: ["freemium", "premium"] },
-  { id: "groq",        name: "Groq",                  url: "https://chat.groq.com",         tiers: ["open_source", "freemium"] },
-  { id: "grok",        name: "Grok",                  url: "https://grok.com",              tiers: ["freemium", "premium"] },
-  { id: "huggingface", name: "HuggingFace Chat",      url: "https://huggingface.co/chat",   tiers: ["open_source"] },
-  { id: "lmsys",       name: "LMSYS Chatbot Arena",   url: "https://lmarena.ai",            tiers: ["open_source", "freemium"] },
-  { id: "mistral",     name: "Mistral Le Chat",       url: "https://chat.mistral.ai",       tiers: ["open_source", "freemium"] },
-  { id: "perplexity",  name: "Perplexity",            url: "https://perplexity.ai",         tiers: ["freemium", "premium"] },
-  { id: "poe",         name: "Poe",                   url: "https://poe.com",               tiers: ["freemium"] },
+  { id: "chatgpt",     name: "ChatGPT",              url: "https://chatgpt.com",           tiers: ["freemium", "premium"], imageGeneration: true },
+  { id: "claude",      name: "Claude",                url: "https://claude.ai",             tiers: ["freemium", "premium"], imageGeneration: false },
+  { id: "copilot",     name: "Microsoft Copilot",     url: "https://copilot.microsoft.com", tiers: ["freemium"], imageGeneration: false },
+  { id: "deepseek",    name: "DeepSeek",              url: "https://chat.deepseek.com",     tiers: ["open_source", "freemium"], imageGeneration: false },
+  { id: "gemini",      name: "Google Gemini",         url: "https://gemini.google.com",     tiers: ["freemium", "premium"], imageGeneration: true },
+  { id: "groq",        name: "Groq",                  url: "https://chat.groq.com",         tiers: ["open_source", "freemium"], imageGeneration: false },
+  { id: "grok",        name: "Grok",                  url: "https://grok.com",              tiers: ["freemium", "premium"], imageGeneration: true },
+  { id: "huggingface", name: "HuggingFace Chat",      url: "https://huggingface.co/chat",   tiers: ["open_source"], imageGeneration: true },
+  { id: "lmsys",       name: "LMSYS Chatbot Arena",   url: "https://lmarena.ai",            tiers: ["open_source", "freemium"], imageGeneration: false },
+  { id: "mistral",     name: "Mistral Le Chat",       url: "https://chat.mistral.ai",       tiers: ["open_source", "freemium"], imageGeneration: false },
+  { id: "perplexity",  name: "Perplexity",            url: "https://perplexity.ai",         tiers: ["freemium", "premium"], imageGeneration: false },
+  { id: "poe",         name: "Poe",                   url: "https://poe.com",               tiers: ["freemium"], imageGeneration: false },
 ];
 
 // ─── Registry Helpers ──────────────────────────────────────────────────────────
@@ -43,7 +45,8 @@ export const PLATFORM_REGISTRY: Platform[] = [
 /** Build a compact registry list for the system prompt. */
 export function buildRegistryBlock(): string {
   return PLATFORM_REGISTRY.map(
-    (p) => `[${p.id}] ${p.name}:${p.tiers.join("/")}`,
+    (p) =>
+      `[${p.id}] ${p.name}: ${p.tiers.join("/")}${p.imageGeneration ? ", image generation" : ""}`,
   ).join("\n");
 }
 

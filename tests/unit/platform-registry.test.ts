@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findPlatform, resolveRecommendations } from "../../lib/platform-registry";
+import { buildRegistryBlock, findPlatform, resolveRecommendations } from "../../lib/platform-registry";
 
 describe("findPlatform", () => {
   it("matches a registry id directly", () => {
@@ -59,5 +59,15 @@ describe("resolveRecommendations", () => {
       premium: pick("claude", "Claude Opus"),
     });
     expect(r.open_source.model_name).toBe("DeepSeek");
+  });
+});
+
+describe("buildRegistryBlock", () => {
+  it("flags image generation only for the four capable platforms", () => {
+    const lines = buildRegistryBlock().split("\n");
+    const flagged = lines.filter((l) => l.endsWith(", image generation")).map((l) => l.slice(1, l.indexOf("]")));
+    expect(flagged.sort()).toEqual(["chatgpt", "gemini", "grok", "huggingface"]);
+    expect(lines).toContain("[gemini] Google Gemini: freemium/premium, image generation");
+    expect(lines).toContain("[claude] Claude: freemium/premium");
   });
 });
