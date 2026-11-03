@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ExtractRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
+  describeError,
   getClientIdentifier,
   rateLimitHeaders,
   retryAfterSeconds,
@@ -146,7 +147,14 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
       details: { host: safeHostname(url) },
     });
-    console.error("URL extraction failed", error);
+    console.error(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        event: "route_failed",
+        route: "extract",
+        ...describeError(error),
+      }),
+    );
     return NextResponse.json(
       { error: "Unable to fetch this URL. It may be blocking requests or taking too long." },
       { status: 500 },

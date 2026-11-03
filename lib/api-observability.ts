@@ -53,7 +53,17 @@ export function retryAfterSeconds(reset: number) {
   return Math.max(1, Math.ceil((reset - Date.now()) / 1000));
 }
 
+function numericStatusCode(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code = (error as { statusCode?: unknown }).statusCode;
+  return typeof code === "number" ? code : undefined;
+}
+
 export function classifyError(error: unknown): string {
+  const statusCode = numericStatusCode(error);
+  if (statusCode === 429) return "provider_rate_limit";
+  if (statusCode === 401 || statusCode === 403) return "auth";
+
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
 
@@ -65,6 +75,19 @@ export function classifyError(error: unknown): string {
   }
 
   return "unknown";
+}
+
+/**
+ * Log-safe summary of an error. Provider errors carry the request body and the
+ * response body, which contain user prompts, so only these three fields leave.
+ */
+export function describeError(error: unknown): { name: string; statusCode?: number; errorType: string } {
+  const statusCode = numericStatusCode(error);
+  return {
+    name: error instanceof Error ? error.name : "NonError",
+    ...(statusCode !== undefined ? { statusCode } : {}),
+    errorType: classifyError(error),
+  };
 }
 
 export function logApiEvent(event: ApiLogEvent) {

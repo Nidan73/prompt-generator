@@ -9,6 +9,7 @@ import {
 import { buildRegistryBlock, getLiveModelLandscape } from "@/lib/ai-catalog";
 import {
   classifyError,
+  describeError,
   getClientIdentifier,
   rateLimitHeaders,
   retryAfterSeconds,
@@ -127,6 +128,18 @@ export async function POST(request: NextRequest) {
     let fallbackCount = 0;
 
     for (const provider of chain) {
+      // A disconnected client should not keep burning provider calls.
+      if (request.signal.aborted) {
+        trackApiEvent({
+          route: "generate",
+          event: "client_aborted",
+          status: 499,
+          durationMs: Date.now() - startedAt,
+          fallbackCount,
+        });
+        return new Response(null, { status: 499 });
+      }
+
       const providerStartedAt = Date.now();
 
       try {
@@ -136,6 +149,7 @@ export async function POST(request: NextRequest) {
           prompt: userContent,
           schema: GenerateSchemaObject,
           maxRetries: 0,
+          abortSignal: request.signal,
         });
 
         // Wait for real output before committing to a 200 — otherwise a provider
@@ -173,6 +187,18 @@ export async function POST(request: NextRequest) {
 
         return response;
       } catch (error) {
+        // The client left: not the provider's fault, so do not count a failure.
+        if (request.signal.aborted) {
+          trackApiEvent({
+            route: "generate",
+            event: "client_aborted",
+            status: 499,
+            durationMs: Date.now() - startedAt,
+            fallbackCount,
+          });
+          return new Response(null, { status: 499 });
+        }
+
         lastError = error;
         fallbackCount += 1;
         recordProviderFailure("generate", provider.name);
@@ -186,7 +212,13 @@ export async function POST(request: NextRequest) {
           fallbackCount,
         });
         console.warn(
-          `Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`,
+          JSON.stringify({
+            scope: "bhai-thik-kor",
+            event: "provider_attempt_failed",
+            route: "generate",
+            provider: provider.name,
+            ...describeError(error),
+          }),
         );
       }
     }
@@ -200,7 +232,14 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
       errorType: classifyError(error),
     });
-    console.error("Prompt generation failed", error);
+    console.error(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        event: "route_failed",
+        route: "generate",
+        ...describeError(error),
+      }),
+    );
     return NextResponse.json(
       { error: "All AI providers are busy or unavailable. Please try again in a moment." },
       { status: 503 },

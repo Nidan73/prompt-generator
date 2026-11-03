@@ -4,6 +4,7 @@ import { createGuardedTextStreamResponse, textStreamFromFullStream } from "@/lib
 import { RefineRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   classifyError,
+  describeError,
   getClientIdentifier,
   rateLimitHeaders,
   retryAfterSeconds,
@@ -85,6 +86,18 @@ export async function POST(request: NextRequest) {
     let fallbackCount = 0;
 
     for (const provider of chain) {
+      // A disconnected client should not keep burning provider calls.
+      if (request.signal.aborted) {
+        trackApiEvent({
+          route: "refine",
+          event: "client_aborted",
+          status: 499,
+          durationMs: Date.now() - startedAt,
+          fallbackCount,
+        });
+        return new Response(null, { status: 499 });
+      }
+
       const providerStartedAt = Date.now();
 
       try {
@@ -93,6 +106,7 @@ export async function POST(request: NextRequest) {
           system: SYSTEM_PROMPT,
           prompt: userContent,
           maxRetries: 0,
+          abortSignal: request.signal,
         });
 
         // See the note in /api/generate: commit to a 200 only once the provider
@@ -128,6 +142,18 @@ export async function POST(request: NextRequest) {
 
         return response;
       } catch (error) {
+        // The client left: not the provider's fault, so do not count a failure.
+        if (request.signal.aborted) {
+          trackApiEvent({
+            route: "refine",
+            event: "client_aborted",
+            status: 499,
+            durationMs: Date.now() - startedAt,
+            fallbackCount,
+          });
+          return new Response(null, { status: 499 });
+        }
+
         lastError = error;
         fallbackCount += 1;
         recordProviderFailure("refine", provider.name);
@@ -141,7 +167,13 @@ export async function POST(request: NextRequest) {
           fallbackCount,
         });
         console.warn(
-          `Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`,
+          JSON.stringify({
+            scope: "bhai-thik-kor",
+            event: "provider_attempt_failed",
+            route: "refine",
+            provider: provider.name,
+            ...describeError(error),
+          }),
         );
       }
     }
@@ -155,7 +187,14 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
       errorType: classifyError(error),
     });
-    console.error("Prompt refinement failed", error);
+    console.error(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        event: "route_failed",
+        route: "refine",
+        ...describeError(error),
+      }),
+    );
     return NextResponse.json(
       { error: "Refinement is temporarily unavailable. Please retry in a moment." },
       { status: 503 },

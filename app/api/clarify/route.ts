@@ -4,6 +4,7 @@ import { createRateLimit } from "@/lib/rate-limit";
 import { ClarifyRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
   classifyError,
+  describeError,
   getClientIdentifier,
   rateLimitHeaders,
   retryAfterSeconds,
@@ -20,6 +21,9 @@ import { z } from "zod";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
+
+/** Clarify is a quick side call; a slow provider should fall through, not stall the UI. */
+const CLARIFY_PROVIDER_TIMEOUT_MS = 10_000;
 
 export type ClarifyingQuestion = {
   id: string;
@@ -101,6 +105,18 @@ export async function POST(request: NextRequest) {
     let fallbackCount = 0;
 
     for (const provider of chain) {
+      // A disconnected client should not keep burning provider calls.
+      if (request.signal.aborted) {
+        trackApiEvent({
+          route: "clarify",
+          event: "client_aborted",
+          status: 499,
+          durationMs: Date.now() - startedAt,
+          fallbackCount,
+        });
+        return new Response(null, { status: 499 });
+      }
+
       const providerStartedAt = Date.now();
 
       try {
@@ -110,6 +126,10 @@ export async function POST(request: NextRequest) {
           prompt: userContent,
           schema: questionSchema,
           maxRetries: 0,
+          abortSignal: AbortSignal.any([
+            request.signal,
+            AbortSignal.timeout(CLARIFY_PROVIDER_TIMEOUT_MS),
+          ]),
         });
 
         recordProviderSuccess("clarify", provider.name, Date.now() - providerStartedAt);
@@ -137,6 +157,18 @@ export async function POST(request: NextRequest) {
           },
         });
       } catch (error) {
+        // The client left: not the provider's fault, so do not count a failure.
+        if (request.signal.aborted) {
+          trackApiEvent({
+            route: "clarify",
+            event: "client_aborted",
+            status: 499,
+            durationMs: Date.now() - startedAt,
+            fallbackCount,
+          });
+          return new Response(null, { status: 499 });
+        }
+
         lastError = error;
         fallbackCount += 1;
         recordProviderFailure("clarify", provider.name);
@@ -149,7 +181,15 @@ export async function POST(request: NextRequest) {
           errorType: classifyError(error),
           fallbackCount,
         });
-        console.warn(`Fallback triggered for ${provider.name}: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(
+          JSON.stringify({
+            scope: "bhai-thik-kor",
+            event: "provider_attempt_failed",
+            route: "clarify",
+            provider: provider.name,
+            ...describeError(error),
+          }),
+        );
       }
     }
 
@@ -162,7 +202,14 @@ export async function POST(request: NextRequest) {
       durationMs: Date.now() - startedAt,
       errorType: classifyError(error),
     });
-    console.error("Clarification failed", error);
+    console.error(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        event: "route_failed",
+        route: "clarify",
+        ...describeError(error),
+      }),
+    );
     return NextResponse.json(
       { error: "Guided Mode is temporarily unavailable. Try direct generation or retry shortly." },
       { status: 503 },
