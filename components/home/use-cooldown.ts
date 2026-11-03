@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import type { ParsedApiError } from "@/lib/home-errors";
+import { planRateLimit, type ParsedApiError } from "@/lib/home-errors";
 
 export const COOLDOWN_MESSAGE = "Cooling down this IP before the next request.";
 
@@ -27,14 +27,16 @@ export function useCooldown(setError: Dispatch<SetStateAction<string>>) {
     return () => window.clearTimeout(timeout);
   }, [cooldownTimer, setError]);
 
-  function reportApiError({ message, retryAfter }: ParsedApiError, fallback: string) {
-    if (typeof retryAfter === "number") {
-      setCooldownTimer(Math.max(1, Math.ceil(retryAfter)));
+  function reportApiError(error: ParsedApiError, fallback: string) {
+    const plan = planRateLimit(error);
+
+    if (plan && "cooldownSeconds" in plan) {
+      setCooldownTimer(plan.cooldownSeconds);
       setError(COOLDOWN_MESSAGE);
       return;
     }
 
-    setError(message ?? fallback);
+    setError(plan?.message ?? error.message ?? fallback);
   }
 
   return { cooldownTimer, isCoolingDown: cooldownTimer > 0, reportApiError };

@@ -149,6 +149,7 @@ export function PromptComposer({
             type="button"
             onClick={() => onGuidedModeChange(false)}
             aria-pressed={!isGuidedModeEnabled}
+            disabled={isClarifying}
             className={cn(
               "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-all duration-200",
               !isGuidedModeEnabled
@@ -162,6 +163,7 @@ export function PromptComposer({
             type="button"
             onClick={() => onGuidedModeChange(true)}
             aria-pressed={isGuidedModeEnabled}
+            disabled={isClarifying}
             className={cn(
               "flex-1 rounded-lg py-2.5 text-sm font-semibold transition-all duration-200",
               isGuidedModeEnabled

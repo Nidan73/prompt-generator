@@ -246,6 +246,61 @@ test("a 429 from generate starts the cooldown and shows the cooldown message", a
   await expect(page.getByText("Cooling down this IP before the next request.")).toBeVisible();
 });
 
+test("a daily-limit 429 from refine shows the wait and does not lock Generate", async ({ page }) => {
+  await page.route("**/api/refine", async (route) => {
+    await route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "Daily limit reached for this feature. Please try again tomorrow.",
+        retryAfter: 40000,
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page
+    .getByPlaceholder("Example: Build a chrome extension that will help me to track my time")
+    .fill("Create a production readiness checklist for a prompt generation app");
+  await page.getByRole("button", { name: /generate prompt/i }).click();
+  await expect(page.getByText("Build a production-ready test prompt")).toBeVisible();
+
+  await page
+    .getByPlaceholder("Refine: e.g., make it shorter, add error handling...")
+    .fill("Make it shorter");
+  await page.keyboard.press("Enter");
+
+  await expect(
+    page.getByText(
+      "Daily limit reached for this feature. Please try again tomorrow. Try again in about 11 h 7 min.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(/\d+s cooldown/)).toBeHidden();
+  await expect(page.getByRole("button", { name: /generate prompt/i })).toBeEnabled();
+});
+
+test("the Fast and Guided toggle is disabled while questions are loading", async ({ page }) => {
+  await page.route("**/api/clarify", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(guidedQuestions),
+    });
+  });
+
+  await page.goto("/");
+  await page
+    .getByPlaceholder("Example: Build a chrome extension that will help me to track my time")
+    .fill("Create a production readiness checklist for a prompt generation app");
+  await page.getByRole("button", { name: "Guided Mode" }).click();
+  await page.getByRole("button", { name: "Start Guided Mode" }).click();
+
+  await expect(page.getByRole("button", { name: "Fast Generation" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Guided Mode", exact: true })).toBeDisabled();
+  await expect(page.getByText("Which expert role should the AI assume?")).toBeVisible();
+});
+
 test("an empty refine response keeps the existing prompt and says so", async ({ page }) => {
   await page.route("**/api/refine", async (route) => {
     await route.fulfill({
