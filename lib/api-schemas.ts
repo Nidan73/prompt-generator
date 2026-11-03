@@ -7,44 +7,25 @@
 
 import { z } from "zod";
 
-export const PROMPT_MAX_CHARS = 4000;
-export const REFINE_SOURCE_MAX_CHARS = 6000;
-export const REFINE_INSTRUCTION_MAX_CHARS = 500;
-export const CLARIFICATION_ANSWER_MAX_CHARS = 3000;
+import {
+  PROMPT_MAX_CHARS,
+  REFINE_SOURCE_MAX_CHARS,
+  REFINE_INSTRUCTION_MAX_CHARS,
+  CLARIFICATION_ANSWER_MAX_CHARS,
+  MAX_CLARIFICATIONS,
+} from "./limits";
 
-/**
- * Headroom for both clients, not just this site.
- *
- * The browser extension appends four "quality" clarifications of its own to
- * whatever the user answered. Guided mode asks three questions, so the extension
- * sends seven — and the previous cap of six rejected that with a 400, breaking
- * guided mode there entirely. Anything raising this must stay ahead of
- * (extension quality clarifications + guided questions).
- */
-export const MAX_CLARIFICATIONS = 10;
+export {
+  PROMPT_MAX_CHARS,
+  REFINE_SOURCE_MAX_CHARS,
+  REFINE_INSTRUCTION_MAX_CHARS,
+  CLARIFICATION_ANSWER_MAX_CHARS,
+  MAX_CLARIFICATIONS,
+};
 
 // ─── /api/generate ─────────────────────────────────────────────────────────────
 
-export const GenerateSchemaObject = z.object({
-  optimized_prompt: z.string().describe("Optimized expert prompt"),
-  routing: z.object({
-    open_source: z.object({
-      platform_id: z.string(),
-      model_name: z.string(),
-      reasoning: z.string(),
-    }),
-    freemium: z.object({
-      platform_id: z.string(),
-      model_name: z.string(),
-      reasoning: z.string(),
-    }),
-    premium: z.object({
-      platform_id: z.string(),
-      model_name: z.string(),
-      reasoning: z.string(),
-    }),
-  }).describe("Best model/platform by tier")
-});
+export { GenerateSchemaObject } from "./generate-schema";
 
 export const GenerateRequestSchema = z.object({
   prompt: z

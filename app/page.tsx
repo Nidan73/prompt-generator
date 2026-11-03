@@ -8,12 +8,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useTheme } from "@/components/theme-provider";
 import { saveToHistory, getHistory, clearHistory, type HistoryEntry } from "@/lib/prompt-history";
 import { encodePromptToHash, decodePromptFromHash } from "@/lib/share-link";
-import {
-  GenerateSchemaObject,
-  PROMPT_MAX_CHARS,
-  REFINE_INSTRUCTION_MAX_CHARS,
-} from "@/lib/api-schemas";
-import { resolveRecommendations } from "@/lib/ai-catalog";
+import { PROMPT_MAX_CHARS, REFINE_INSTRUCTION_MAX_CHARS } from "@/lib/limits";
+import { GenerateSchemaObject } from "@/lib/generate-schema";
+import { resolveRecommendations } from "@/lib/platform-registry";
 import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
 import clsx from "clsx";
 import { twMerge } from "tailwind-merge";
