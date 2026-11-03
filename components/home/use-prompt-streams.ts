@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { experimental_useObject as useObject, useCompletion } from "@ai-sdk/react";
 import { GenerateSchemaObject } from "@/lib/generate-schema";
 import { resolveRecommendations } from "@/lib/platform-registry";
@@ -39,10 +39,16 @@ export function usePromptStreams({
   setHistory,
   setRefineInput,
 }: PromptStreamsOptions) {
+  const latestResultRef = useRef(result);
+  useEffect(() => {
+    latestResultRef.current = result;
+  }, [result]);
+
   const {
     object: generateObject,
     submit: submitGenerate,
     isLoading: isGeneratingStream,
+    stop: stopGenerate,
   } = useObject({
     api: "/api/generate",
     schema: GenerateSchemaObject,
@@ -80,21 +86,34 @@ export function usePromptStreams({
   const {
     completion: refineCompletion,
     complete: submitRefine,
-    isLoading: isRefiningStream
+    isLoading: isRefiningStream,
+    stop: stopRefine,
   } = useCompletion({
     api: "/api/refine",
     streamProtocol: "text",
     onFinish: (_prompt, completion) => {
-      if (result) {
-        const finalResult = { ...result, optimized_prompt: completion };
-        setResult(finalResult);
-        saveToHistory({
-          inputPrompt: trimmedPrompt,
-          optimizedPrompt: completion,
-          recommendations: result.recommendations,
-        });
-        setHistory(getHistory());
+      // The hook binds this callback when the request starts, so read the
+      // result from the ref to build on the latest one.
+      const current = latestResultRef.current;
+      if (!current) {
+        setRefineInput("");
+        return;
       }
+
+      const refined = completion.trim();
+      // An empty body is a clean 200, which would otherwise blank the prompt.
+      if (!refined) {
+        setError("Refinement returned nothing. Your prompt is unchanged.");
+        return;
+      }
+
+      setResult({ ...current, optimized_prompt: refined });
+      saveToHistory({
+        inputPrompt: trimmedPrompt,
+        optimizedPrompt: refined,
+        recommendations: current.recommendations,
+      });
+      setHistory(getHistory());
       setRefineInput("");
     },
     onError: (error) => {
@@ -122,6 +141,8 @@ export function usePromptStreams({
   return {
     submitGenerate,
     submitRefine,
+    stopGenerate,
+    stopRefine,
     isGeneratingStream,
     isRefiningStream,
     displayPrompt,

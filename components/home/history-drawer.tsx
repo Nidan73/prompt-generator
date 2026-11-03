@@ -7,12 +7,14 @@ import type { HistoryEntry } from "@/lib/prompt-history";
 type HistoryDrawerProps = {
   open: boolean;
   history: HistoryEntry[];
+  // Loading an entry mid-stream would race the stream's own result.
+  disabled: boolean;
   onClear: () => void;
   onClose: () => void;
   onLoad: (entry: HistoryEntry) => void;
 };
 
-export function HistoryDrawer({ open, history, onClear, onClose, onLoad }: HistoryDrawerProps) {
+export function HistoryDrawer({ open, history, disabled, onClear, onClose, onLoad }: HistoryDrawerProps) {
   return (
     <AnimatePresence>
       {open && (
@@ -58,7 +60,8 @@ export function HistoryDrawer({ open, history, onClear, onClose, onLoad }: Histo
                     type="button"
                     key={entry.id}
                     onClick={() => onLoad(entry)}
-                    className="group rounded-xl border border-black/[0.05] bg-black/[0.02] p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-white/[0.06] dark:bg-[#1c1c1e] dark:hover:border-blue-700 dark:hover:bg-blue-950/20"
+                    disabled={disabled}
+                    className="group rounded-xl disabled:cursor-not-allowed disabled:opacity-50 border border-black/[0.05] bg-black/[0.02] p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/50 dark:border-white/[0.06] dark:bg-[#1c1c1e] dark:hover:border-blue-700 dark:hover:bg-blue-950/20"
                   >
                     <p className="text-sm font-medium text-slate-800 dark:text-slate-200 line-clamp-1">
                       {entry.inputPrompt}

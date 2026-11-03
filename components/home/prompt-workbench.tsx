@@ -43,13 +43,13 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
     resetGuidedMode,
   } = useGuidedMode();
   const [result, setResult] = useState<DispatcherResponse | null>(null);
-  const { copied, setCopied, copyTimeoutRef, copyText, copyAndOpen, sharePrompt } = useClipboardActions(result);
+  const [error, setError] = useState("");
+  const { copied, setCopied, copyText, copyAndOpen, sharePrompt } = useClipboardActions(result, setError);
   const { sharedPrompt, dismissSharedPrompt } = useSharedPrompt();
   const [activeTab, setActiveTab] = useState<RecommendationTier>("open_source");
   const [isGuidedModeEnabled, setIsGuidedModeEnabled] = useState(false);
   const [isClarifying, setIsClarifying] = useState(false);
   const [isLoadingManual, setIsLoadingManual] = useState(false);
-  const [error, setError] = useState("");
   const { cooldownTimer, isCoolingDown, reportApiError } = useCooldown(setError);
   // Bumped per clarify request and on Reset, so a superseded response is dropped.
   const clarifyRequestRef = useRef(0);
@@ -82,6 +82,8 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   const {
     submitGenerate,
     submitRefine,
+    stopGenerate,
+    stopRefine,
     isGeneratingStream,
     isRefiningStream,
     displayPrompt,
@@ -89,6 +91,7 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
     displayRecommendations,
   } = usePromptStreams({ result, trimmedPrompt, setResult, setError, reportApiError, setHistory, setRefineInput });
   const isCurrentlyLoading = isLoadingManual || isGeneratingStream || isRefiningStream;
+  const isStreaming = isGeneratingStream || isRefiningStream;
   const isGenerateDisabled = !hasEnoughContext || isClarifying || isCurrentlyLoading || isCoolingDown;
 
   // Load history on mount
@@ -243,7 +246,19 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
     resetGuidedMode();
   }
 
+  function stopStreaming() {
+    if (isGeneratingStream) {
+      stopGenerate();
+      setError("Generation stopped.");
+    }
+    if (isRefiningStream) {
+      stopRefine();
+    }
+  }
+
   function loadFromHistory(entry: HistoryEntry) {
+    if (isStreaming) return;
+
     setResult({
       optimized_prompt: entry.optimizedPrompt,
       recommendations: entry.recommendations as Record<RecommendationTier, Recommendation>,
@@ -260,7 +275,7 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
   }
 
   function copyOutput() {
-    if (!result) return;
+    if (!result || isStreaming) return;
     const text = outputMode === "api" ? getApiModeOutput() : result.optimized_prompt;
     copyText("prompt", text);
   }
@@ -283,6 +298,7 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
         <HistoryDrawer
           open={showHistory}
           history={history}
+          disabled={isStreaming}
           onClear={() => {
             clearHistory();
             setHistory([]);
@@ -350,6 +366,8 @@ export function PromptWorkbench({ banner, hero, footer }: PromptWorkbenchProps) 
             onOutputModeChange={setOutputMode}
             isCurrentlyLoading={isCurrentlyLoading}
             isRefiningStream={isRefiningStream}
+            isStreaming={isStreaming}
+            onStop={stopStreaming}
             copied={copied}
             onShare={sharePrompt}
             onCopyOutput={copyOutput}

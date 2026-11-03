@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Clipboard, Code2, Link2, Loader2, MessageSquare, RefreshCw, Send } from "lucide-react";
+import { Clipboard, Code2, Link2, Loader2, MessageSquare, RefreshCw, Send, Square } from "lucide-react";
 import { buildApiModeOutput } from "@/lib/api-mode";
 import { cn } from "@/lib/cn";
 import { REFINE_INSTRUCTION_MAX_CHARS } from "@/lib/limits";
@@ -19,6 +19,8 @@ type OutputPanelProps = {
   onOutputModeChange: (mode: "chat" | "api") => void;
   isCurrentlyLoading: boolean;
   isRefiningStream: boolean;
+  isStreaming: boolean;
+  onStop: () => void;
   copied: string;
   onShare: () => void;
   onCopyOutput: () => void;
@@ -39,6 +41,8 @@ export function OutputPanel({
   onOutputModeChange,
   isCurrentlyLoading,
   isRefiningStream,
+  isStreaming,
+  onStop,
   copied,
   onShare,
   onCopyOutput,
@@ -70,12 +74,22 @@ export function OutputPanel({
                     Master prompt
                   </h2>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {isStreaming && (
+                    <button
+                      type="button"
+                      onClick={onStop}
+                      className="inline-flex h-10 items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60"
+                    >
+                      <Square className="h-4 w-4" />
+                      Stop
+                    </button>
+                  )}
                   {/* Share Button */}
                   <button
                     type="button"
                     onClick={onShare}
-                    disabled={!hasResult}
+                    disabled={!hasResult || isStreaming}
                     className="inline-flex h-10 items-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-black/40"
                   >
                     <Link2 className="h-4 w-4" />
@@ -85,7 +99,7 @@ export function OutputPanel({
                   <button
                     type="button"
                     onClick={onCopyOutput}
-                    disabled={!hasResult}
+                    disabled={!hasResult || isStreaming}
                     className="inline-flex h-10 items-center gap-2 rounded-2xl border border-black/[0.05] bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/[0.08] dark:bg-[#1c1c1e] dark:text-slate-300 dark:hover:bg-black/40"
                   >
                     <Clipboard className="h-4 w-4" />
