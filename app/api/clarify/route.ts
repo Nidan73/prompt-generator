@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { buildClarifyUserContent } from "@/lib/prompt-envelope";
 import { createRateLimit } from "@/lib/rate-limit";
 import { ClarifyRequestSchema, parseRequestBody } from "@/lib/api-schemas";
 import {
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
   const { prompt: userPrompt } = parsed.data;
 
   try {
-    const userContent = `<user_prompt>\n${userPrompt}\n</user_prompt>`;
+    const userContent = buildClarifyUserContent(userPrompt);
     const chain = await getChain("clarify", CLARIFY_POOL, { structured: true });
     let lastError: unknown = new Error("No API keys configured or all providers failed.");
     let fallbackCount = 0;

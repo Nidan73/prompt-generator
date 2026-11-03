@@ -14,6 +14,7 @@ import {
   retryAfterSeconds,
   trackApiEvent,
 } from "@/lib/api-observability";
+import { buildGenerateUserContent } from "@/lib/prompt-envelope";
 import { createRateLimit } from "@/lib/rate-limit";
 import {
   GENERATE_POOL,
@@ -118,17 +119,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { prompt: userPrompt, clarifications } = parsed.data;
-    // Delimited so pasted web content cannot pose as instructions.
-    let userContent = `<user_prompt>\n${userPrompt}\n</user_prompt>\n`;
-
-    const validClarifications = clarifications.filter((c) => c.answer && c.answer.trim().length > 0);
-    if (validClarifications.length > 0) {
-      userContent += "\n<clarifications>\n";
-      validClarifications.forEach((clarification) => {
-        userContent += `- ${clarification.question.trim()}: ${clarification.answer.trim()}\n`;
-      });
-      userContent += "</clarifications>\n";
-    }
+    const userContent = buildGenerateUserContent(userPrompt, clarifications);
 
     const systemPrompt = buildSystemPrompt(await getLiveModelLandscape());
     const chain = await getChain("generate", GENERATE_POOL, { structured: true });

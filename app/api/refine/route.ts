@@ -9,6 +9,7 @@ import {
   retryAfterSeconds,
   trackApiEvent,
 } from "@/lib/api-observability";
+import { buildRefineUserContent } from "@/lib/prompt-envelope";
 import { createRateLimit } from "@/lib/rate-limit";
 import {
   REFINE_POOL,
@@ -76,9 +77,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { currentPrompt, instruction } = parsed.data;
-  // Markers, not XML tags: the model reproduced <prompt>/<edit> wrappers in its
-  // output, which shipped the scaffolding to users as part of the refined prompt.
-  const userContent = `[CURRENT PROMPT]\n${currentPrompt.slice(0, 2000)}\n[END CURRENT PROMPT]\n\n[EDIT REQUEST]\n${instruction.slice(0, 500)}\n[END EDIT REQUEST]`;
+  const userContent = buildRefineUserContent(currentPrompt, instruction);
 
   try {
     const chain = await getChain("refine", REFINE_POOL, { structured: false });
