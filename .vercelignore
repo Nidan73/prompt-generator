@@ -1,0 +1,10 @@
+# The Vercel CLI reads this file, not .gitignore, when uploading a local deploy.
+# Keep local-only material out of the build upload.
+.superpowers
+test-results
+playwright-report
+PROJECT_CONTEXT.md
+PROMO_VIDEO_SCRIPT.md
+*.tsbuildinfo
+.env
+.env*.local
