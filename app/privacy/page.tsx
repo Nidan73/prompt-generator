@@ -72,7 +72,8 @@ export default function PrivacyPage() {
           The extension&apos;s optional history is off by default. When you turn it on, your last 50
           prompts are stored on your own device using the browser&apos;s local extension storage.
           They never reach our servers and never sync between devices. Turning history off deletes
-          them.
+          them. If you also turn on Adaptive Style, a short style summary built from your history
+          is sent with your requests; the history itself stays on your device.
         </p>
       </Section>
 
@@ -88,8 +89,10 @@ export default function PrivacyPage() {
       <Section title="AI providers">
         <p>
           To improve a prompt we pass your text to one of our model providers (Groq, Google
-          (Gemini), or OpenRouter) under their API terms. We send only your prompt text and any
-          clarifications you provided. If you used page extraction, the text we pulled from the
+          (Gemini), or OpenRouter) under their API terms. We send your text, any answers you gave
+          in Guided Mode, guidance the extension adds to improve quality, a summary of attached
+          files (how many and of what kind, never names or contents), and, if you turned it on,
+          your style summary. If you used page extraction, the text we pulled from the
           page you linked is sent along with your prompt.
         </p>
       </Section>
