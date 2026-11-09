@@ -6,6 +6,7 @@ import {
   classifyError,
   describeError,
   getClientIdentifier,
+  providerErrorLogger,
   rateLimitHeaders,
   retryAfterSeconds,
   trackApiEvent,
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
           prompt: userContent,
           maxRetries: 0,
           abortSignal: request.signal,
+          onError: providerErrorLogger("refine", provider.name),
         });
 
         // See the note in /api/generate: commit to a 200 only once the provider

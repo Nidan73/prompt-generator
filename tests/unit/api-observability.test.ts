@@ -23,6 +23,7 @@ import {
   classifyError,
   describeError,
   normalizeClientKey,
+  providerErrorLogger,
   trackApiEvent,
 } from "../../lib/api-observability";
 
@@ -120,5 +121,26 @@ describe("classifyError invalid output", () => {
     expect(classifyError(new InvalidOutputError("Provider returned fewer than 3 usable questions."))).toBe(
       "invalid_output",
     );
+  });
+});
+
+describe("providerErrorLogger", () => {
+  it("logs the error type and status but no request or response body", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = new APICallError({
+      message: "rate limited",
+      url: "https://api.groq.com/openai/v1/chat/completions",
+      requestBodyValues: { messages: [{ role: "user", content: "SECRET_USER_PROMPT" }] },
+      statusCode: 429,
+      responseBody: '{"error":{"failed_generation":"ECHOED_USER_TEXT"}}',
+      isRetryable: true,
+    });
+    providerErrorLogger("generate", "groq")({ error });
+    const logged = warn.mock.calls.flat().join(" ");
+    expect(logged).toContain('"statusCode":429');
+    expect(logged).toContain('"event":"provider_stream_error"');
+    expect(logged).not.toContain("SECRET_USER_PROMPT");
+    expect(logged).not.toContain("ECHOED_USER_TEXT");
+    warn.mockRestore();
   });
 });
