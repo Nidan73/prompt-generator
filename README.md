@@ -51,7 +51,7 @@ Limits are per client. IPv4 clients are keyed by address and IPv6 clients by the
 - URL fetching (`lib/url-safety.ts`): private, loopback, link-local and other internal IPv4 and IPv6 ranges are rejected, DNS names are resolved and every address is checked, and the connection is pinned to the checked address through undici so a name cannot resolve to something different at connect time. Every redirect hop is re-validated.
 - Security headers (`lib/security-headers.ts`, applied in `next.config.ts`): Content-Security-Policy, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and `Permissions-Policy`.
 - Admin auth: the session cookie is HMAC-signed with `ADMIN_SESSION_SECRET`, and login is limited to 5 attempts per 15 minutes per client.
-- Error logs record the error type and status only, never prompt text or provider response bodies.
+- Logging (`lib/api-observability.ts`): each API call writes one JSON line with the route, event, status, provider, duration, input length in characters, and error type, and adds daily counters in Redis that expire after 14 days. Caught errors are logged through `describeError`, and streaming provider errors through `providerErrorLogger`; both keep only the error name, status code, and error type. The AI SDK's default error output includes request and response bodies, which hold user prompts, so streaming calls always pass `providerErrorLogger` instead. No prompt text, request body, or provider response body is logged.
 
 ## Stack
 
@@ -122,4 +122,6 @@ tests/eval/     live prompt quality eval (manual, needs provider keys)
 
 ## Browser extension
 
-A Chrome extension that uses this API lives at https://github.com/Nidan73/bhai-thik-kor-extension.
+A Chrome extension that uses this API lives at https://github.com/Nidan73/bhai-thik-kor-extension. Version 1.1.4 calls `/api/generate`, `/api/clarify`, and `/api/refine` from its background service worker. It does not use `/api/extract` or `/api/health`. It is not on the Chrome Web Store yet.
+
+The `/privacy` page covers what the extension sends: the text you ask it to improve, your Guided Mode answers, the quality guidance the extension adds, a count and kind of attached files (never names or contents), and, with Adaptive Style on, the style you typed or a short summary from your local history. Nothing is sent until the user asks. The extension's limits are mirrored by hand in its `src/shared/constants.ts`, so a change to a limit or to the clarification cap (`MAX_CLARIFICATIONS`, currently 10; the extension sends up to 7) here needs a matching check there.
