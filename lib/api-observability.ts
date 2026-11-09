@@ -115,6 +115,25 @@ export function describeError(error: unknown): { name: string; statusCode?: numb
   };
 }
 
+/**
+ * onError callback for streamText and streamObject. The AI SDK's default prints
+ * the whole error to the console, including request and response bodies that
+ * hold user prompts, so streaming calls must pass this instead.
+ */
+export function providerErrorLogger(route: string, provider: string): (event: { error: unknown }) => void {
+  return ({ error }) => {
+    console.warn(
+      JSON.stringify({
+        scope: "bhai-thik-kor",
+        event: "provider_stream_error",
+        route,
+        provider,
+        ...describeError(error),
+      }),
+    );
+  };
+}
+
 export function logApiEvent(event: ApiLogEvent) {
   const payload = {
     scope: "bhai-thik-kor",

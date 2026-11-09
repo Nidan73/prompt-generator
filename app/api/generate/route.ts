@@ -11,6 +11,7 @@ import {
   classifyError,
   describeError,
   getClientIdentifier,
+  providerErrorLogger,
   rateLimitHeaders,
   retryAfterSeconds,
   trackApiEvent,
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
           schema: GenerateSchemaObject,
           maxRetries: 0,
           abortSignal: request.signal,
+          onError: providerErrorLogger("generate", provider.name),
         });
 
         // Wait for real output before committing to a 200, otherwise a provider
